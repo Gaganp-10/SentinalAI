@@ -1,0 +1,222 @@
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{fancyhdr}
+\usepackage{cite}
+\usepackage{framed}
+\usepackage{a4wide}
+\usepackage{float}
+\usepackage{epsfig}
+\usepackage{longtable}
+\usepackage{enumerate}
+\usepackage{afterpage}
+\usepackage{multirow}
+\usepackage{ragged2e}
+\usepackage{gensymb}
+\usepackage[left=2cm,top=2cm,right=2cm,bottom=2cm]{geometry}
+\usepackage{array}
+\usepackage{setspace}
+\usepackage{txfonts}
+\usepackage{lipsum}
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\usepackage{subfiles}
+\usepackage{adjustbox}
+\newcommand{\Usefont}[1]{\fontfamily{#1}\selectfont}
+\usepackage{lscape}
+\renewcommand{\baselinestretch}{1.7}
+\usepackage{blindtext}
+\usepackage{xpatch}
+\usepackage{url}
+\usepackage{leqno}
+\usepackage{subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{pdfpages}
+\usepackage{acronym}
+\usepackage{courier}
+\definecolor{color1}{HTML}{990505}
+\definecolor{color2}{HTML}{2c72f5}
+\definecolor{color4}{HTML}{c73d1e}
+\definecolor{color3}{HTML}{de0d0d}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+
+\definecolor{crystal_teal}{HTML}{00637C}
+\definecolor{colour}{HTML}
+{138808}
+\lstset{
+	language=SQL,
+	basicstyle=\ttfamily\small,
+	keywordstyle=\color{crystal\_teal}\bfseries,
+	commentstyle=\color{gray}\itshape,
+	stringstyle=\color{colour},
+	showstringspaces=false,
+	breaklines=true,
+	%frame=single,
+	tabsize=2,
+	morekeywords={AUTO_INCREMENT, ENUM, TIMESTAMP, DEFAULT, CURRENT_TIMESTAMP}
+}
+
+\captionsetup{labelfont=it}
+%\setlength{\abovecaptionskip}{20 pt}
+\setlength{\belowcaptionskip}{20 pt}
+
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning}
+
+\tikzstyle{startstop} = [rectangle, rounded corners, minimum width=3.5cm, minimum height=1cm,text centered, draw=black, fill=blue!20]
+\tikzstyle{process} = [rectangle, minimum width=3.5cm, minimum height=1cm, text centered, draw=black, fill=blue!10]
+\tikzstyle{arrow} = [thick,->,>=stealth]
+
+\hyphenpenalty=5000
+\tolerance=1000
+\usepackage[nottoc]{tocbibind}
+\bibliographystyle{IEEEtran}
+\renewcommand{\bibname}{References}
+
+\begin{document}
+	
+	\gdef \title{VISVESVARAYA TECHNOLOGICAL UNIVERSITY BELAGAVI-590018}
+	
+	\include{coverpage}
+	
+	\include{certificate1}
+	
+	\pagenumbering{roman}
+	\include{acknowledgement}
+	
+	\tableofcontents
+	\newpage
+	\cleardoublepage
+	\setcounter{page}{1}
+	\pagenumbering{arabic}
+	
+	\pagestyle{fancy}
+	\fancyhf{} % clear all header and footer fields
+	\fancyhead[R]{BCS402} % header on the left
+	\fancyfoot[L]{Dept. of CSE, RNSIT}
+	\fancyfoot[C]{2025-26}
+	\fancyfoot[R]{Page \thepage}
+	\renewcommand{\headrulewidth}{2 pt}
+	\renewcommand{\footrulewidth}{2 pt}
+	\fancypagestyle{plain}{
+		\fancyhf{} % clear header/footer
+		\fancyfoot[L]{Dept. of CSE, RNSIT}
+		\fancyfoot[C]{2025-26}
+		\fancyfoot[R]{Page \thepage}
+		\renewcommand{\headrulewidth}{0pt}
+		\renewcommand{\footrulewidth}{2pt}
+	}
+
+	\chapter{Introduction}
+	\setlength{\parskip}{12 pt}
+	\section{Background}
+	
+	\hspace{1 cm} Explain the domain and motivation behind the project.
+	Mention current problems and why your solution is needed.
+	
+	\thispagestyle{plain}
+	
+	\section{Problem Statement}
+	
+	\hspace{1 cm}Clearly define the issue your project solves.
+	
+	\setlength{\parskip}{12 pt}
+	\section{Objectives}
+	
+	\begin{itemize}
+		
+		\item Objective 1
+		\item Objective 2
+		\item Objective 3\\
+		...
+		
+	\end{itemize}
+	
+	\section{Scope}
+	\hspace{1cm} Describe what the project covers and its current limitations.
+	
+	\chapter{Methodology}
+	\section{Software Requirements}
+	
+	\begin{itemize}[leftmargin=2cm]
+		
+		\item Frontend: 
+		\item Backend: 
+		\item Database: 
+		\item IDE: 
+		\item Operating System: 
+		
+	\end{itemize}
+	
+	\setlength{\parskip}{12 pt}
+	
+	\newpage
+	
+	\section{System Architecture}
+	\hspace{1cm} Explain architecture and workflow.
+	
+	\section{E R Diagram}
+	
+	\begin{figure}[h!]
+		\centering
+		{\includegraphics[scale=3]{placeholder.png}}
+		\caption{\textit{[Insert E R Digram]}}
+	\end{figure}
+	A small paragrpah about the E R Diagram.
+
+	\section{Relational Database Schema}
+	
+	\begin{figure}[H]
+		\centering
+		{\includegraphics[scale=3]{placeholder.png}}
+		\caption{\textit{[Insert Database Schema]}}
+	\end{figure}
+	Brief description about the relational database schema
+	
+	\chapter{Implementation}
+	\section{Modules}
+	\hspace{1cm} Module 1:\\
+	Description\\
+	
+	Module 2:\\
+	Description\\
+	\section{Code Snippets}
+	\subsection*{SQL Queries}
+	
+	
+	\chapter{Result}
+		\begin{figure}[h!]
+			\centering
+			\includegraphics[scale=3]{placeholder.png}
+			\caption{Caption}
+			Project Results with description for each image.
+		\end{figure}
+	
+	
+	\chapter{Conclusion}
+	
+	\hspace{1 cm}Summarize achievements and learning outcomes. 
+	
+	\fancypagestyle{reference}
+		\fancyhf{}
+		\renewcommand{\headrulewidth}{0pt}
+		\renewcommand{\footrulewidth}{0pt}
+	\begin{thebibliography}{99}
+		
+		\bibitem{dbms}
+		Author Name, “Book Name,” Publisher, Year.
+		
+		\bibitem{}
+		Author Name, “Research Paper Title,” Journal Name,
+		vol. x, no. y, pp. xx-xx, Year.
+		
+	\end{thebibliography}
+	\thispagestyle{reference}
+
+	
+\end{document}

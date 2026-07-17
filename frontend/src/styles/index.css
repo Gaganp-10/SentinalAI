@@ -1,0 +1,255 @@
+@import "tailwindcss";
+@config "../../tailwind.config.js";
+
+/* ─── SOC Design System — CSS Custom Properties ─────────────────────────── */
+/*
+ * Contrast check: --text-secondary (#7C9186) on --bg-panel (#0F1613)
+ * ≈ 5.46:1 — passes WCAG AA for normal text. Kept as specified.
+ */
+:root {
+  --bg-void:              #070B09;
+  --bg-panel:             #0F1613;
+  --bg-panel-hover:       #151F1A;
+  --border-glow:          #1E3A2C;
+  --border-glow-active:   #2ECC71;
+  --text-primary:         #E7F5EC;
+  --text-secondary:       #7C9186;
+  --signal-green:         #2ECC71;
+  --signal-green-bright:  #39FF88;
+  --sev-critical:         #E5484D;
+  --sev-high:             #F5A623;
+  --sev-medium:           #F0C94A;
+  --sev-low:              #4FD1C5;
+  --sev-resolved:         #2ECC71;
+
+  /* Legacy aliases used by older components */
+  --bg-panel-raised:      var(--bg-panel-hover);
+  --border-hair:          var(--border-glow);
+  --signal-amber:         var(--signal-green);
+  --signal-cyan:          var(--sev-low);
+  --sev-info:             var(--text-secondary);
+}
+
+/* ─── Theme (Tailwind v4 token bridge) ───────────────────────────────────── */
+@theme {
+  --font-sans:    "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+
+  --color-void: #070B09;
+  --color-panel: #0F1613;
+  --color-panel-hover: #151F1A;
+  --color-border-glow: #1E3A2C;
+  --color-border-glow-active: #2ECC71;
+  --color-text-primary: #E7F5EC;
+  --color-text-secondary: #7C9186;
+  --color-signal-green: #2ECC71;
+  --color-signal-green-bright: #39FF88;
+  --color-sev-critical: #E5484D;
+  --color-sev-high: #F5A623;
+  --color-sev-medium: #F0C94A;
+  --color-sev-low: #4FD1C5;
+  --color-sev-resolved: #2ECC71;
+
+  --text-xs: 12px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 14px;
+  --text-sm--line-height: 1.5;
+  --text-base: 16px;
+  --text-base--line-height: 1.6;
+  --text-lg: 20px;
+  --text-lg--line-height: 1.4;
+  --text-xl: 28px;
+  --text-xl--line-height: 1.3;
+  --text-2xl: 32px;
+  --text-2xl--line-height: 1.25;
+  --text-3xl: 36px;
+  --text-3xl--line-height: 1.2;
+  --text-4xl: 40px;
+  --text-4xl--line-height: 1.15;
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background-color: var(--bg-void);
+  color: var(--text-primary);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  color: var(--text-primary);
+}
+
+/* ─── Focus Rings ─────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--signal-green);
+  outline-offset: 2px;
+}
+
+/* ─── Shared form field ───────────────────────────────────────────────────── */
+.input-field {
+  width: 100%;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-glow);
+  border-radius: 8px;
+  padding: 0.625rem 1rem;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.input-field::placeholder {
+  color: color-mix(in srgb, var(--text-secondary) 70%, transparent);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--border-glow-active);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-glow-active) 40%, transparent),
+              0 0 16px -4px color-mix(in srgb, var(--signal-green) 45%, transparent);
+}
+
+.input-field:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-void); }
+::-webkit-scrollbar-thumb {
+  background: var(--border-glow);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--border-glow) 70%, var(--signal-green));
+}
+
+/* ─── Monaco Editor Decorations ───────────────────────────────────────────── */
+.monaco-line-highlight-critical {
+  border-left: 3px solid var(--sev-critical) !important;
+  background-color: rgba(229, 72, 77, 0.06) !important;
+}
+.monaco-line-highlight-high {
+  border-left: 3px solid var(--sev-high) !important;
+  background-color: rgba(245, 166, 35, 0.06) !important;
+}
+.monaco-line-highlight-medium {
+  border-left: 3px solid var(--sev-medium) !important;
+  background-color: rgba(240, 201, 74, 0.06) !important;
+}
+.monaco-line-highlight-low {
+  border-left: 3px solid var(--sev-low) !important;
+  background-color: rgba(79, 209, 197, 0.06) !important;
+}
+.monaco-line-highlight-danger {
+  border-left: 3px solid var(--sev-critical) !important;
+  background-color: rgba(229, 72, 77, 0.06) !important;
+}
+.monaco-margin-highlight-danger {
+  background-color: rgba(229, 72, 77, 0.2) !important;
+}
+
+/* ─── Signal Trace Animation ──────────────────────────────────────────────── */
+@keyframes signal-sweep {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0% 0 0); }
+}
+
+.signal-sweep {
+  animation: signal-sweep 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-sweep {
+    animation: none;
+    clip-path: inset(0 0% 0 0);
+  }
+}
+
+/* ─── Auth Page Ambient Waveform ──────────────────────────────────────────── */
+@keyframes ambient-drift {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.ambient-wave {
+  animation: ambient-drift 24s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-wave { animation: none; }
+}
+
+/* ─── Segmented Control ───────────────────────────────────────────────────── */
+.seg-control {
+  display: inline-flex;
+  background: var(--bg-void);
+  border: 1px solid var(--border-glow);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg-btn {
+  padding: 4px 14px;
+  font-size: 11px;
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.seg-btn:hover:not(.seg-btn--active) {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+}
+
+/* ─── Panel hover glow ─────────────────────────────────────────────────────── */
+.panel-surface {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-glow);
+  border-radius: 10px;
+  transition: box-shadow 200ms, border-color 200ms, background-color 200ms;
+}
+
+.panel-surface--hoverable:hover {
+  background: var(--bg-panel-hover);
+  border-color: color-mix(in srgb, var(--border-glow) 55%, var(--signal-green));
+  box-shadow: 0 0 24px -8px rgba(46, 204, 113, 0.35);
+}
+
+/* ─── Codebase map node pulse (unresolved critical/high) ───────────────────── */
+@keyframes vuln-map-breathe {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%      { opacity: 1; transform: scale(1.12); }
+}
+
+.vuln-map-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vuln-map-breathe 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vuln-map-pulse { animation: none; }
+}
+
+/* ─── Utility: hide spinner for file input ─────────────────────────────────── */
+input[type="file"] { display: none; }

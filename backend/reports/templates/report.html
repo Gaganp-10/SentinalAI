@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Security Vulnerability Scan Report - {{ project.project_name }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm;
+            @bottom-right {
+                content: counter(page);
+                font-family: 'Inter', Arial, sans-serif;
+                font-size: 9pt;
+                color: #888888;
+            }
+            @bottom-left {
+                content: "Security Vulnerability Detector & Fixer";
+                font-family: 'Inter', Arial, sans-serif;
+                font-size: 9pt;
+                color: #888888;
+            }
+        }
+        body {
+            font-family: 'Inter', Arial, sans-serif;
+            color: #1a1a1a;
+            line-height: 1.5;
+            margin: 0;
+            padding: 0;
+        }
+        h1, h2, h3, h4 {
+            color: #0f172a;
+            font-weight: 700;
+        }
+        h1 {
+            font-size: 26pt;
+            margin-bottom: 5px;
+            border-bottom: 2px solid #3b82f6;
+            padding-bottom: 10px;
+        }
+        h2 {
+            font-size: 18pt;
+            margin-top: 30px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 5px;
+            page-break-after: avoid;
+        }
+        h3 {
+            font-size: 14pt;
+            margin-top: 20px;
+            page-break-after: avoid;
+        }
+        .header {
+            margin-bottom: 40px;
+        }
+        .meta-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        .meta-table td {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            font-size: 10pt;
+        }
+        .meta-table td.label {
+            font-weight: bold;
+            background-color: #f8fafc;
+            width: 25%;
+        }
+        /* Dashboard Stats */
+        .stats-grid {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 40px;
+            gap: 15px;
+        }
+        .stat-card {
+            flex: 1;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+            background-color: #ffffff;
+        }
+        .stat-card.score-card {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: #ffffff;
+            border: none;
+        }
+        .stat-card.score-card h3, .stat-card.score-card .stat-val {
+            color: #ffffff;
+        }
+        .stat-val {
+            font-size: 22pt;
+            font-weight: 800;
+            margin: 10px 0 5px 0;
+            color: #0f172a;
+        }
+        .stat-card h3 {
+            margin: 0;
+            font-size: 10pt;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+        }
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            font-size: 8pt;
+            font-weight: bold;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        .badge-critical { background-color: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+        .badge-high { background-color: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+        .badge-medium { background-color: #fefce8; color: #854d0e; border: 1px solid #fef08a; }
+        .badge-low { background-color: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+        .badge-info { background-color: #f0f9ff; color: #075985; border: 1px solid #bae6fd; }
+
+        /* Findings table */
+        .findings-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            margin-bottom: 40px;
+        }
+        .findings-table th, .findings-table td {
+            padding: 10px 12px;
+            border: 1px solid #e2e8f0;
+            text-align: left;
+            font-size: 9.5pt;
+        }
+        .findings-table th {
+            background-color: #f8fafc;
+            font-weight: bold;
+            color: #334155;
+        }
+        .findings-table tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        /* Detail Sections */
+        .finding-detail {
+            margin-top: 30px;
+            padding: 20px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background-color: #fff;
+            page-break-inside: avoid;
+            margin-bottom: 30px;
+        }
+        .finding-detail h3 {
+            margin-top: 0;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .finding-meta {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            font-size: 9pt;
+            color: #64748b;
+        }
+        .code-block {
+            background-color: #0f172a;
+            color: #f8fafc;
+            padding: 12px 15px;
+            border-radius: 6px;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 8.5pt;
+            overflow-x: auto;
+            margin: 10px 0;
+            white-space: pre-wrap;
+        }
+        .explanation-section {
+            margin-top: 15px;
+            font-size: 9.5pt;
+        }
+        .explanation-section h4 {
+            margin-bottom: 5px;
+            color: #334155;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Cover / Header -->
+    <div class="header">
+        <h1>Security Vulnerability Report</h1>
+        <p style="color: #64748b; font-size: 11pt; margin-top: 5px;">AI-Powered Static Application Security Testing (SAST)</p>
+    </div>
+
+    <table class="meta-table">
+        <tr>
+            <td class="label">Project Name</td>
+            <td>{{ project.project_name }}</td>
+            <td class="label">Scan Time</td>
+            <td>{{ scan.scan_time.strftime('%Y-%m-%d %H:%M:%S UTC') }}</td>
+        </tr>
+        <tr>
+            <td class="label">Total Files</td>
+            <td>{{ files|length }}</td>
+            <td class="label">Total Findings</td>
+            <td>{{ vulnerabilities|length }}</td>
+        </tr>
+        <tr>
+            <td class="label">Target System</td>
+            <td>Local / Uploaded Codebase</td>
+            <td class="label">Status</td>
+            <td><span style="font-weight: bold; color: green;">Completed</span></td>
+        </tr>
+    </table>
+
+    <h2>Executive Summary</h2>
+    <div class="stats-grid">
+        <div class="stat-card score-card">
+            <h3>Security Score</h3>
+            <div class="stat-val">{{ security_score }}/100</div>
+            <p style="margin: 0; font-size: 8pt; opacity: 0.8;">Based on weighted issues</p>
+        </div>
+        <div class="stat-card">
+            <h3>Critical / High</h3>
+            <div class="stat-val" style="color: #b91c1c;">{{ scan.critical_count + scan.high_count }}</div>
+            <p style="margin: 0; font-size: 8pt; color: #64748b;">Requires immediate fix</p>
+        </div>
+        <div class="stat-card">
+            <h3>Medium</h3>
+            <div class="stat-val" style="color: #b45309;">{{ scan.medium_count }}</div>
+            <p style="margin: 0; font-size: 8pt; color: #64748b;">Fix before release</p>
+        </div>
+        <div class="stat-card">
+            <h3>Low / Info</h3>
+            <div class="stat-val" style="color: #15803d;">{{ scan.low_count }}</div>
+            <p style="margin: 0; font-size: 8pt; color: #64748b;">Best practices / warnings</p>
+        </div>
+    </div>
+
+    <h2>Vulnerabilities List</h2>
+    {% if vulnerabilities %}
+    <table class="findings-table">
+        <thead>
+            <tr>
+                <th style="width: 8%;">Severity</th>
+                <th style="width: 25%;">Type</th>
+                <th style="width: 42%;">File / Line</th>
+                <th style="width: 15%;">Standards</th>
+                <th style="width: 10%;">Tool</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vuln in vulnerabilities %}
+            <tr>
+                <td>
+                    <span class="badge badge-{{ vuln.severity }}">
+                        {{ vuln.severity }}
+                    </span>
+                </td>
+                <td><strong>{{ vuln.type }}</strong></td>
+                <td><code>{{ vuln.file.filename }}</code> (Line {{ vuln.line_number }})</td>
+                <td>
+                    {% if vuln.cwe_id %}{{ vuln.cwe_id }}<br>{% endif %}
+                    {% if vuln.owasp_category %}<span style="font-size: 7.5pt; color: #64748b;">{{ vuln.owasp_category }}</span>{% endif %}
+                </td>
+                <td><code style="font-size: 8pt;">{{ vuln.source_tool }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #166534; background-color: #f0fdf4; padding: 15px; border-radius: 6px; border: 1px solid #bbf7d0;">
+        <strong>No vulnerabilities found!</strong> Your code passed all static security checks.
+    </p>
+    {% endif %}
+
+    <!-- Detailed Findings Section -->
+    {% if vulnerabilities %}
+    <div class="page-break"></div>
+    <h2>Vulnerability Details</h2>
+    {% for vuln in vulnerabilities %}
+    <div class="finding-detail">
+        <h3 style="margin-bottom: 5px;">
+            <span>#{{ loop.index }}. {{ vuln.type }}</span>
+            <span class="badge badge-{{ vuln.severity }}" style="float: right;">{{ vuln.severity }}</span>
+        </h3>
+        <div class="finding-meta">
+            <span><strong>File:</strong> <code>{{ vuln.file.filepath }}</code></span>
+            <span><strong>Line:</strong> {{ vuln.line_number }}</span>
+            {% if vuln.cwe_id %}<span><strong>Standards:</strong> {{ vuln.cwe_id }}</span>{% endif %}
+        </div>
+
+        <div class="explanation-section">
+            <h4>Description</h4>
+            <p style="margin-top: 5px; margin-bottom: 10px;">{{ vuln.description }}</p>
+        </div>
+
+        {% if vuln.code_snippet %}
+        <div class="explanation-section">
+            <h4>Vulnerable Code</h4>
+            <div class="code-block">{{ vuln.code_snippet }}</div>
+        </div>
+        {% endif %}
+
+        {% if vuln.recommendation %}
+        <div class="explanation-section">
+            <h4>Recommendation</h4>
+            <p style="margin-top: 5px; margin-bottom: 10px;">{{ vuln.recommendation }}</p>
+        </div>
+        {% endif %}
+
+        {% if vuln.suggested_fix %}
+        <div class="explanation-section">
+            <h4>Suggested Secure Fix</h4>
+            <div class="code-block" style="background-color: #064e3b; border-left: 4px solid #10b981;">{{ vuln.suggested_fix }}</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+</body>
+</html>
