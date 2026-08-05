@@ -77,7 +77,7 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
             
             # Generate AI explanation and fix
             explanation = generate_vulnerability_explanation(finding)
-            _, corrected_snippet, _ = generate_patched_code(finding, full_file_content)
+            _, corrected_snippet, _, auto_fixable = generate_patched_code(finding, full_file_content)
             
             # Count severity
             sev = finding.severity.lower()
@@ -104,7 +104,8 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
                 owasp_category=finding.owasp_category,
                 confidence=finding.confidence,
                 source_tool=finding.source_tool,
-                fixed=False
+                fixed=False,
+                auto_fixable=auto_fixable
             )
             db.add(db_vuln)
             

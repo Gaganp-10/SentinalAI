@@ -26,8 +26,12 @@ class ASTVisitor(ast.NodeVisitor):
         )
 
     def _get_snippet(self, line_number: int) -> str:
+        """Return the source line at line_number with only trailing whitespace
+        stripped.  Leading indentation is preserved so the snippet exactly
+        matches the real file content, which is required for the apply-fix
+        endpoint to locate the vulnerable line via an exact string search."""
         if 1 <= line_number <= len(self.lines):
-            return self.lines[line_number - 1].strip()
+            return self.lines[line_number - 1].rstrip()
         return ""
 
     def visit_Assign(self, node: ast.Assign):

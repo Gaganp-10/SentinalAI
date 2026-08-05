@@ -70,6 +70,7 @@ class VulnerabilityOut(BaseModel):
     confidence: float
     source_tool: str
     fixed: bool
+    auto_fixable: bool = True
 
     class Config:
         from_attributes = True
@@ -83,6 +84,20 @@ class VulnerabilityOut(BaseModel):
 
 class VulnerabilityUpdate(BaseModel):
     fixed: bool
+
+
+class FileMetadataOut(BaseModel):
+    id: UUID
+    size: int
+
+    class Config:
+        from_attributes = True
+
+
+class ApplyFixResponse(BaseModel):
+    vulnerability: VulnerabilityOut
+    file: FileMetadataOut
+
 
 
 # --- Scan History Schemas ---

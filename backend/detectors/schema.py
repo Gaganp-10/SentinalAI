@@ -16,6 +16,7 @@ class Finding:
     confidence: float = 1.0
     source_tool: str = ""  # bandit/semgrep/ast/ai
     fixed: bool = False
+    auto_fixable: bool = True
 
     def dedup_key(self) -> tuple:
         import os

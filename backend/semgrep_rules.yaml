@@ -1,0 +1,26 @@
+rules:
+  - id: python-sqli
+    pattern: $CURSOR.execute($QUERY + $VAL)
+    message: "SQL Injection detected."
+    languages: [python]
+    severity: ERROR
+  - id: python-subprocess-shell
+    pattern: subprocess.run($CMD, shell=True)
+    message: "Command Injection detected."
+    languages: [python]
+    severity: ERROR
+  - id: python-pickle-loads
+    pattern: pickle.loads($DATA)
+    message: "Insecure pickle deserialization."
+    languages: [python]
+    severity: ERROR
+  - id: python-hashlib-md5
+    pattern: hashlib.md5($DATA)
+    message: "Weak MD5 hashing."
+    languages: [python]
+    severity: WARNING
+  - id: python-eval
+    pattern: eval($DATA)
+    message: "Dangerous eval detected."
+    languages: [python]
+    severity: ERROR

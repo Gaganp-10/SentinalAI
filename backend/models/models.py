@@ -62,6 +62,7 @@ class Vulnerability(Base):
     confidence = Column(Float, default=1.0)
     source_tool = Column(String, nullable=False)  # bandit/semgrep/ast/ai
     fixed = Column(Boolean, default=False)
+    auto_fixable = Column(Boolean, default=True)
 
     file = relationship("File", back_populates="vulnerabilities")
 

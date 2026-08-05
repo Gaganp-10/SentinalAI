@@ -1,0 +1,12 @@
+.env
+backend/.env
+frontend/.env
+uploads/
+__pycache__/
+*.pyc
+test.db
+backend.zip
+node_modules/
+.env.local
+frontend/node_modules/
+frontend/dist/

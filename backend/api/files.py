@@ -2,6 +2,7 @@ import os
 import zipfile
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File as FastAPIFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
@@ -13,7 +14,7 @@ from backend.api.auth import get_current_user
 from backend.utils.config import settings
 from backend.parser.language_detect import detect_language
 
-router = APIRouter(prefix="/projects", tags=["Files"])
+router = APIRouter(prefix="", tags=["Files"])
 
 def check_project_ownership(db: Session, project_id: UUID, user_id: UUID) -> Project:
     project = db.query(Project).filter(Project.id == project_id, Project.user_id == user_id).first()
@@ -24,7 +25,7 @@ def check_project_ownership(db: Session, project_id: UUID, user_id: UUID) -> Pro
         )
     return project
 
-@router.post("/{project_id}/files", response_model=List[FileOut], status_code=status.HTTP_201_CREATED)
+@router.post("/projects/{project_id}/files", response_model=List[FileOut], status_code=status.HTTP_201_CREATED)
 def upload_files(
     project_id: UUID,
     file: UploadFile = FastAPIFile(...),
@@ -152,7 +153,7 @@ def upload_files(
     return saved_files
 
 
-@router.get("/{project_id}/files", response_model=List[FileOut])
+@router.get("/projects/{project_id}/files", response_model=List[FileOut])
 def list_files(
     project_id: UUID,
     db: Session = Depends(get_db),
@@ -164,3 +165,52 @@ def list_files(
     check_project_ownership(db, project_id, current_user.id)
     files = db.query(DBFile).filter(DBFile.project_id == project_id).all()
     return files
+
+
+@router.get("/files/{file_id}/download")
+def download_file(
+    file_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns the current file content (which may include applied fixes) as a downloadable file response.
+    Verifies that the requesting user owns the project this file belongs to.
+    """
+    file_obj = (
+        db.query(DBFile)
+        .join(Project)
+        .filter(
+            DBFile.id == file_id,
+            Project.user_id == current_user.id
+        )
+        .first()
+    )
+    if not file_obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+
+    base_upload_dir = os.path.abspath(settings.UPLOAD_DIR)
+    project_dir = os.path.abspath(os.path.join(base_upload_dir, str(file_obj.project_id)))
+    full_file_path = os.path.abspath(os.path.join(project_dir, file_obj.filepath))
+
+    # Path traversal safety check
+    if not full_file_path.startswith(project_dir) or not full_file_path.startswith(base_upload_dir):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Invalid file path"
+        )
+
+    if not os.path.isfile(full_file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File content not found on disk"
+        )
+
+    return FileResponse(
+        path=full_file_path,
+        filename=file_obj.filename,
+        media_type="application/octet-stream"
+    )

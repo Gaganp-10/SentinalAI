@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import os
 import shutil
@@ -6,7 +7,39 @@ import logging
 from typing import List
 from backend.detectors.schema import Finding
 
+# Pattern Bandit uses: each line in the `code` field is prefixed with
+# "<line_number><one mandatory space><code_indentation><code>"
+# e.g. "3     cursor = ..."  →  line number "3", separator " " (one space),
+# then "    cursor = ..." which is the code with its real 4-space indent.
+# We strip ONLY the digit group plus that single separator space so the
+# code's own leading indentation is preserved for exact-match file patching.
+_BANDIT_LINE_PREFIX = re.compile(r'^\d+ ')
+
+
 logger = logging.getLogger(__name__)
+
+
+def _strip_bandit_line_numbers(code: str) -> str:
+    """
+    Remove Bandit's line-number prefixes from each line of a ``code`` field.
+
+    Bandit's JSON ``code`` value formats each source line as::
+
+        "<line_number><one-or-more-spaces><actual_source_code>\\n"
+
+    e.g.  ``"10   cursor.execute(query)\\n"``
+
+    We strip only the leading ``<digits><whitespace>`` portion so the
+    remaining text exactly matches what is stored in the real source file
+    (preserving the code's own indentation).  Lines that don't start with
+    the pattern (e.g. a trailing empty line) are left unchanged.
+    """
+    cleaned_lines = []
+    for line in code.split("\n"):
+        cleaned_lines.append(_BANDIT_LINE_PREFIX.sub("", line))
+    return "\n".join(cleaned_lines)
+
+
 
 class BanditDetector:
     def __init__(self):
@@ -40,8 +73,13 @@ class BanditDetector:
                 # Convert absolute path to relative path inside the project directory
                 rel_path = os.path.relpath(filename, project_dir).replace("\\", "/")
                 
-                # Get snippet
-                code = issue.get("code", "")
+                # Get snippet and strip Bandit's line-number prefixes.
+                # Bandit formats each line as "{line_num}{whitespace}{actual_code}\n".
+                # We must remove these prefixes so the snippet exactly matches
+                # the real file content, enabling the apply-fix endpoint to
+                # locate and replace the correct region.
+                raw_code = issue.get("code", "")
+                code = _strip_bandit_line_numbers(raw_code)
                 
                 # Map bandit severity to standard levels
                 bandit_sev = issue.get("issue_severity", "LOW").upper()
