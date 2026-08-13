@@ -1,5 +1,25 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
+import { toast } from "sonner";
+import { googleLogin, getCurrentUser } from "../../api/auth";
+import { toApiErrorMessage } from "../../api/client";
+
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        oauth2: {
+          initTokenClient: (config: {
+            client_id: string;
+            scope: string;
+            callback: (tokenResponse: { access_token?: string; error?: string; error_description?: string }) => void;
+          }) => { requestAccessToken: () => void };
+        };
+      };
+    };
+  }
+}
 
 function GoogleIcon() {
   return (
@@ -29,10 +49,11 @@ function AppleIcon() {
   );
 }
 
-function SocialButton({ children, label }: { children: ReactNode; label: string }) {
+function SocialButton({ children, label, onClick }: { children: ReactNode; label: string; onClick?: () => void }) {
   return (
     <motion.button
       type="button"
+      onClick={onClick}
       whileHover={{ y: -2 }}
       whileTap={{ scale: 0.975, y: 0 }}
       transition={{ type: "spring", stiffness: 500, damping: 28 }}
@@ -45,12 +66,60 @@ function SocialButton({ children, label }: { children: ReactNode; label: string 
 }
 
 export function SocialAuth() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+
+  const handleGoogleClick = () => {
+    const clientId =
+      (import.meta.env["VITE_GOOGLE_CLIENT_ID"] as string | undefined) ||
+      "1020864929554-v9mb9l065pedkr9ah01a1n3jsggfbc5c.apps.googleusercontent.com";
+
+    if (!window.google?.accounts?.oauth2) {
+      toast.error("Google Identity Services is loading. Please try again in a moment.");
+      return;
+    }
+
+    const tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: "openid email profile",
+      callback: async (tokenResponse) => {
+        // User closed the popup or denied permission — silent no-op
+        if (tokenResponse.error) {
+          if (tokenResponse.error !== "access_denied" && tokenResponse.error !== "immediate_failed") {
+            toast.error(`Google Sign-In failed: ${tokenResponse.error_description ?? tokenResponse.error}`);
+          }
+          return;
+        }
+
+        if (!tokenResponse.access_token) {
+          toast.error("Google Sign-In did not return an access token. Please try again.");
+          return;
+        }
+
+        setLoading(true);
+        try {
+          await googleLogin(tokenResponse.access_token);
+          const user = await getCurrentUser();
+          toast.success(`Signed in as ${user.username || user.email}`);
+          navigate({ to: "/dashboard" });
+        } catch (error) {
+          const message = toApiErrorMessage(error);
+          toast.error(message);
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+
+    tokenClient.requestAccessToken();
+  };
+
   return (
     <div className="flex gap-3">
-      <SocialButton label="Google">
+      <SocialButton label={loading ? "Connecting..." : "Google"} onClick={handleGoogleClick}>
         <GoogleIcon />
       </SocialButton>
-      <SocialButton label="Apple">
+      <SocialButton label="Apple" onClick={() => toast.info("Apple Sign In requires an Apple Developer account.")}>
         <AppleIcon />
       </SocialButton>
     </div>

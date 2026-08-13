@@ -269,3 +269,66 @@ body {
   background-position: 0 0, 22px 22px;
 }
 
+/* ── Syntax Highlighting Tokens (Prism) ────────────────────────── */
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: oklch(0.65 0.03 260);
+  font-style: italic;
+}
+
+.token.punctuation {
+  color: oklch(0.85 0.02 260);
+}
+
+.token.namespace {
+  opacity: 0.7;
+}
+
+.token.property,
+.token.tag,
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol,
+.token.deleted {
+  color: oklch(0.75 0.18 35);
+}
+
+.token.selector,
+.token.attr-name,
+.token.string,
+.token.char,
+.token.builtin,
+.token.inserted {
+  color: oklch(0.78 0.16 145);
+}
+
+.token.operator,
+.token.entity,
+.token.url,
+.language-css .token.string,
+.style .token.string {
+  color: oklch(0.80 0.08 220);
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: oklch(0.72 0.21 285);
+  font-weight: 600;
+}
+
+.token.function,
+.token.class-name {
+  color: oklch(0.82 0.15 75);
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  color: oklch(0.78 0.16 55);
+}
+
+

@@ -11,7 +11,7 @@
  */
 
 function resolveApiBaseUrl(): string {
-  const rawEnvUrl = import.meta.env.VITE_API_BASE_URL;
+  const rawEnvUrl = import.meta.env["VITE_API_BASE_URL"];
 
   if (rawEnvUrl && rawEnvUrl.trim() !== "") {
     return rawEnvUrl.trim().replace(/\/+$/, "");

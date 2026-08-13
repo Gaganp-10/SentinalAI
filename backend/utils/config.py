@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME_IN_PRODUCTION_1234567890"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    GOOGLE_CLIENT_ID: str = "1020864929554-v9mb9l065pedkr9ah01a1n3jsggfbc5c.apps.googleusercontent.com"
     
     # Postgres configuration
     POSTGRES_SERVER: str = "db"

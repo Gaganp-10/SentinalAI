@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, ShieldCheck } from "lucide-react";
 import { formatScanDate, latestScan, type Project, type ScanHistory } from "../../api/projects";
+import { computeSecurityScore, getScoreColor } from "../project/SecurityScoreGauge";
 
 const SEVERITIES = [
   { key: "critical_count", label: "Critical", color: "oklch(0.62 0.21 22)" },
@@ -22,6 +23,8 @@ export function ProjectCard({
   index: number;
 }) {
   const scan = latestScan(scans);
+  const score = computeSecurityScore(scan);
+  const colorInfo = score !== null ? getScoreColor(score) : null;
 
   return (
     <motion.div
@@ -39,9 +42,18 @@ export function ProjectCard({
             <ShieldCheck className="size-[18px]" />
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-[16.5px] font-semibold tracking-[-0.02em] text-foreground">
-              {project.project_name}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-[16.5px] font-semibold tracking-[-0.02em] text-foreground">
+                {project.project_name}
+              </h3>
+              {score !== null && colorInfo && (
+                <span
+                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${colorInfo.badgeTone}`}
+                >
+                  Score: {score}
+                </span>
+              )}
+            </div>
             <p className="mt-0.5 text-[12.5px] text-muted-foreground">
               Last scan: {scan ? formatScanDate(scan.scan_time) : "No scans yet"}
             </p>

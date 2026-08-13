@@ -27,6 +27,9 @@ class LoginRequest(BaseModel):
     username: str  # Can be username or email
     password: str
 
+class GoogleAuthRequest(BaseModel):
+    access_token: str
+
 # --- Project Schemas ---
 class ProjectCreate(BaseModel):
     project_name: str

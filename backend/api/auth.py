@@ -4,10 +4,12 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from jose import jwt, JWTError
 from pydantic import ValidationError
+import httpx
+import re
 
 from backend.database.session import get_db
 from backend.models.models import User
-from backend.models.schemas import UserCreate, UserOut, Token, LoginRequest
+from backend.models.schemas import UserCreate, UserOut, Token, LoginRequest, GoogleAuthRequest
 from backend.utils.config import settings
 from backend.utils.security import verify_password, get_password_hash, create_access_token
 
@@ -89,7 +91,7 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
         (User.username == login_data.username) | (User.email == login_data.username)
     ).first()
     
-    if not user or not verify_password(login_data.password, user.hashed_password):
+    if not user or not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect username/email or password"
@@ -102,7 +104,73 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/google", response_model=Token)
+async def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """
+    Authenticates a user via Google OAuth2 access token (popup flow) and returns a JWT access token.
+    Verifies the token by calling Google's userinfo endpoint.
+    """
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {body.access_token}"},
+                timeout=10.0,
+            )
+        if response.status_code != 200:
+            raise ValueError(f"Google userinfo returned {response.status_code}: {response.text}")
+        id_info = response.json()
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid or expired Google access token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not verify Google token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
+    email = id_info.get("email")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google userinfo does not contain an email address."
+        )
+
+    name = id_info.get("name") or id_info.get("given_name") or email.split("@")[0]
+
+    user = db.query(User).filter(User.email == email).first()
+
+    if not user:
+        # Derive a unique username from the Google display name or email local-part
+        base_username = re.sub(r"[^\w]", "", name.lower().replace(" ", "_"))
+        if not base_username:
+            base_username = email.split("@")[0]
+
+        username = base_username
+        counter = 1
+        while db.query(User).filter(User.username == username).first():
+            username = f"{base_username}_{counter}"
+            counter += 1
+
+        user = User(
+            username=username,
+            email=email,
+            hashed_password=None,
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    return {
+        "access_token": create_access_token(user.id, expires_delta=access_token_expires),
+        "token_type": "bearer",
+    }
 
 
 @router.get("/me", response_model=UserOut)

@@ -18,6 +18,8 @@ import {
 import { DashboardShell } from "../components/dashboard/DashboardShell";
 import { TopNav } from "../components/dashboard/TopNav";
 import { Markdown } from "../components/project/Markdown";
+import { CodeViewer } from "../components/project/CodeViewer";
+import { FixDiffViewer } from "../components/project/FixDiffViewer";
 import { getCurrentUser } from "../api/auth";
 import { clearToken, toApiErrorMessage } from "../api/client";
 import { getProject } from "../api/projects";
@@ -300,12 +302,15 @@ function VulnerabilityDetailPage() {
                 <h2 className="text-[16px] font-semibold tracking-[-0.02em] text-foreground">
                   Flagged code
                 </h2>
-                <p className="mt-1.5 text-[13px] text-muted-foreground">
+                <p className="mt-1.5 mb-4 text-[13px] text-muted-foreground">
                   Read-only, as stored on the backend at line {data.line_number}.
                 </p>
-                <pre className="mt-5 overflow-x-auto rounded-[18px] bg-foreground/[0.05] px-4 py-4 font-mono text-[12.5px] leading-[1.7] text-foreground/90">
-                  <code>{data.code_snippet ?? "No snippet available for this finding."}</code>
-                </pre>
+                <CodeViewer
+                  code={data.code_snippet ?? "No snippet available for this finding."}
+                  filename={data.file?.filename}
+                  lineNumber={data.line_number}
+                  severity={data.severity}
+                />
               </section>
 
               <section className="glass-card rounded-[32px] p-6 sm:p-7">
@@ -330,22 +335,15 @@ function VulnerabilityDetailPage() {
               <h2 className="text-[16px] font-semibold tracking-[-0.02em] text-foreground">
                 Suggested fix
               </h2>
-              <p className="mt-1.5 text-[13px] text-muted-foreground">
-                Before and after, exactly as the backend would write it to the file.
+              <p className="mt-1.5 mb-4 text-[13px] text-muted-foreground">
+                Before and after line-by-line diff, exactly as the backend would write it to the file.
               </p>
 
-              <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <DiffBlock
-                  label="Current code"
-                  code={data.code_snippet ?? "—"}
-                  variant="removed"
-                />
-                <DiffBlock
-                  label="Proposed code"
-                  code={data.suggested_fix ?? "No suggested fix available."}
-                  variant="added"
-                />
-              </div>
+              <FixDiffViewer
+                originalCode={data.code_snippet ?? ""}
+                suggestedFix={data.suggested_fix ?? ""}
+                filename={data.file?.filename}
+              />
 
               {!autoFixable && (
                 <div className="glass-field mt-5 flex items-start gap-3 rounded-[18px] px-4 py-3.5">

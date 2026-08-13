@@ -11,10 +11,15 @@ import { UploadZone } from "../components/project/UploadZone";
 import { FileList } from "../components/project/FileList";
 import { ScanPanel } from "../components/project/ScanPanel";
 import { ScanHistoryList } from "../components/project/ScanHistoryList";
+import { SecurityScoreGauge } from "../components/project/SecurityScoreGauge";
+import { SeverityBreakdownChart } from "../components/project/SeverityBreakdownChart";
+import { ScanTimeline } from "../components/project/ScanTimeline";
+import { CodebaseVulnerabilityMap } from "../components/project/CodebaseVulnerabilityMap";
 import { getCurrentUser } from "../api/auth";
 import { clearToken, toApiErrorMessage } from "../api/client";
-import { getProject, listScans, type ScanHistory } from "../api/projects";
+import { getProject, latestScan, listScans, type ScanHistory } from "../api/projects";
 import { getScan, listFiles, startScan, uploadFile } from "../api/files";
+import { listVulnerabilities } from "../api/vulnerabilities";
 
 export const Route = createFileRoute("/projects/$projectId/")({
   head: () => ({
@@ -66,6 +71,11 @@ function ProjectDetailPage() {
     queryFn: () => listScans(projectId),
     retry: false,
   });
+  const vulns = useQuery({
+    queryKey: ["projects", projectId, "vulnerabilities"],
+    queryFn: () => listVulnerabilities(projectId),
+    retry: false,
+  });
 
   // Real polling of GET /scans/{id} while the backend reports pending/running.
   const polled = useQuery({
@@ -110,6 +120,7 @@ function ProjectDetailPage() {
       setFinishedScan(polled.data);
       setActiveScanId(null);
       void queryClient.invalidateQueries({ queryKey: ["projects", projectId, "scans"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects", projectId, "vulnerabilities"] });
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       if (polledStatus === "completed") {
         toast.success(`Scan complete — ${polled.data.total_issues} issues found`);
@@ -199,6 +210,29 @@ function ProjectDetailPage() {
                   : undefined
             }
             onScan={() => scan.mutate()}
+          />
+
+          <CodebaseVulnerabilityMap
+            projectId={projectId}
+            files={fileList}
+            vulnerabilities={vulns.data ?? []}
+            loading={files.isLoading || vulns.isLoading}
+          />
+
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <SecurityScoreGauge
+              scan={latestScan(scans.data)}
+              loading={scans.isLoading}
+            />
+            <SeverityBreakdownChart
+              scan={latestScan(scans.data)}
+              loading={scans.isLoading}
+            />
+          </div>
+
+          <ScanTimeline
+            scans={scans.data ?? []}
+            loading={scans.isLoading}
           />
 
           <ScanHistoryList

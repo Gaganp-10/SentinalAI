@@ -21,7 +21,14 @@ import {
   severityTone,
 } from "../api/vulnerabilities";
 
+export type VulnerabilitySearch = {
+  fileId?: string | undefined;
+};
+
 export const Route = createFileRoute("/projects/$projectId/vulnerabilities")({
+  validateSearch: (search: Record<string, unknown>): VulnerabilitySearch => ({
+    fileId: typeof search["fileId"] === "string" ? search["fileId"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Findings & Fixes — SentinelAI" },
@@ -48,6 +55,7 @@ function isUnauthorized(error: unknown) {
 
 function VulnerabilitiesPage() {
   const { projectId } = Route.useParams();
+  const { fileId } = Route.useSearch();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -113,12 +121,18 @@ function VulnerabilitiesPage() {
     onError: (error) => toast.error(toApiErrorMessage(error)),
   });
 
-  const list = vulns.data ?? [];
+  const rawList = vulns.data ?? [];
+  const fileList = files.data ?? [];
+  const targetFile = fileList.find((f) => String(f.id) === String(fileId));
+
+  const list = fileId
+    ? rawList.filter((v) => String(v.file_id || v.file?.id) === String(fileId))
+    : rawList;
+
   const counts = SEVERITY_ORDER.map((key) => ({
     key,
     count: list.filter((v) => v.severity.toLowerCase() === key).length,
   }));
-  const fileList = files.data ?? [];
 
   return (
     <DashboardShell>
@@ -149,6 +163,21 @@ function VulnerabilitiesPage() {
         </motion.div>
 
         <section className="glass-card mt-7 rounded-[32px] p-6 sm:p-7">
+          {fileId && (
+            <div className="mb-4 flex items-center justify-between rounded-[18px] bg-foreground/[0.05] px-4 py-2.5">
+              <span className="text-[13px] text-foreground">
+                Showing findings for file: <span className="font-semibold">{targetFile?.filename ?? fileId}</span>
+              </span>
+              <Link
+                to="/projects/$projectId/vulnerabilities"
+                params={{ projectId }}
+                className="text-[12px] text-muted-foreground hover:text-foreground underline"
+              >
+                Show all files
+              </Link>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"

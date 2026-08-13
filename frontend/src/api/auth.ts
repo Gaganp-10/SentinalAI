@@ -19,7 +19,14 @@ export async function signup(username: string, email: string, password: string) 
   return data;
 }
 
+export async function googleLogin(accessToken: string): Promise<LoginResponse> {
+  const { data } = await apiClient.post<LoginResponse>("/api/auth/google", { access_token: accessToken });
+  if (data?.access_token) setToken(data.access_token);
+  return data;
+}
+
 export async function getCurrentUser(): Promise<CurrentUser> {
   const { data } = await apiClient.get<CurrentUser>("/api/auth/me");
   return data;
 }
+
