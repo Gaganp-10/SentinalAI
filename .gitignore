@@ -1,6 +1,7 @@
 .env
 backend/.env
 frontend/.env
+docker.env
 uploads/
 __pycache__/
 *.pyc

@@ -1,56 +1,91 @@
+# Docker Compose — Full Stack: Frontend + Backend + PostgreSQL
+#
+# Usage:
+#   docker compose up --build     # first run / after code changes
+#   docker compose up             # subsequent runs (data persists via volumes)
+#   docker compose down           # stop and remove containers (data volumes kept)
+#   docker compose down -v        # stop AND delete volumes (wipes DB data)
+
 version: '3.8'
 
 services:
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_API_BASE_URL: http://localhost:8000
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
 
+  # ─────────────────────────────────────────────
+  # PostgreSQL database
+  # ─────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: secdetector
+    ports:
+      # Host 5433 → container 5432 to avoid clashing with any locally-running
+      # Postgres instance on the default port. Use localhost:5433 from GUI tools.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d secdetector"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # FastAPI backend
+  # ─────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    # Load Docker-specific env vars from docker.env (kept separate from the
+    # local-dev .env so DATABASE_URL host values don't get mixed up).
+    env_file:
+      - docker.env
+    # Override any env vars that must always be correct inside Docker,
+    # regardless of what docker.env contains.
     environment:
-      - POSTGRES_SERVER=db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=security_scanner
-      - SECRET_KEY=YOUR_JWT_SECRET_KEY_HERE_MIN_32_CHARACTERS
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=gpt-4o-mini
-      - CORS_ORIGINS=http://localhost:3000,http://frontend:80
+      # Containers reach each other by service name, not 'localhost'
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/secdetector
+      POSTGRES_SERVER: db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: secdetector
     volumes:
-      - uploads_data:/app/uploads
+      # Bind-mount the host uploads/ dir so files persist across restarts
+      # and are accessible without entering the container.
+      - ./uploads:/app/uploads
     depends_on:
       db:
+        # Wait for Postgres to actually accept connections, not just start
         condition: service_healthy
+    restart: unless-stopped
 
-  db:
-    image: postgres:15-alpine
-    restart: always
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=security_scanner
+  # ─────────────────────────────────────────────
+  # React/Vite frontend (served by nginx)
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # VITE_API_BASE_URL is baked into the static bundle at build time by Vite.
+        # It must be the URL the *browser* uses to reach the backend — localhost:8000,
+        # NOT http://backend:8000 (that hostname only resolves inside Docker's internal
+        # network, not from the user's browser).
+        VITE_API_BASE_URL: http://localhost:8000
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d security_scanner"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      # Host 3000 → container nginx port 80. Matches local dev convention.
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
 
 volumes:
+  # Named volume for Postgres data — survives 'docker compose down'
+  # Use 'docker compose down -v' to intentionally wipe it.
   postgres_data:
-  uploads_data:

@@ -1,0 +1,50 @@
+# ── frontend/.dockerignore ───────────────────────────────────────────────────
+# Applied when Docker builds from context ./frontend (as set in docker-compose.yml).
+# The build stage runs `npm ci` to install fresh deps, so local node_modules must
+# be excluded. dist/ is rebuilt inside the container, so the local one is excluded too.
+
+# Dependencies — always reinstalled fresh inside the build stage
+node_modules
+
+# Previous build output — rebuilt inside container
+dist
+dist-ssr
+.output
+.vinxi
+.nitro
+.tanstack
+
+# Local environment file — VITE_API_BASE_URL is passed via build ARG in compose
+.env
+.env.local
+.env.*.local
+
+# Test artefacts and screenshots (large, not needed in image)
+phase1-screenshots
+phase2-screenshots
+phase3-screenshots
+test_screenshots
+e2e_test.cjs
+test_prod_config.cjs
+test_backend_auth.py
+test_server.py
+
+# Playwright / test cache
+playwright-report
+test-results
+
+# IDE / OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Documentation
+*.md
+README.md
+AGENTS.md

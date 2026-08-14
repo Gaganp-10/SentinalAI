@@ -1,0 +1,32 @@
+# ── backend/.dockerignore ────────────────────────────────────────────────────
+# Applied when Docker builds from context ./backend (as set in docker-compose.yml).
+# Keeps the backend image context small and secret-free.
+
+# Python environments — never bake local venvs into the image
+.venv
+venv
+
+# Compiled bytecode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# Local environment file — secrets come from docker.env / compose environment block
+.env
+
+# Test artefacts
+tests/
+.pytest_cache
+*.db
+test.db
+
+# Documentation that doesn't need to be in the image
+walkthrough.md
+*.md
+
+# IDE noise
+.vscode
+.idea
+.DS_Store

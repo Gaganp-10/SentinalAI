@@ -1,0 +1,58 @@
+# ── Project-root .dockerignore ──────────────────────────────────────────────
+# This file limits what gets sent to the Docker daemon as build context.
+# Since each service uses a subdirectory as its context (./backend, ./frontend),
+# this root file mainly prevents the daemon from seeing irrelevant top-level items
+# if the root is ever used as a build context directly.
+
+# Version control
+.git
+.gitignore
+
+# Python environments (never bake local venvs into images)
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Node
+node_modules
+frontend/node_modules
+
+# Build artefacts
+frontend/dist
+frontend/.output
+frontend/.vinxi
+frontend/.nitro
+frontend/.tanstack
+
+# Local uploads (can contain user data / test files — not for images)
+uploads/
+
+# Local databases and test artefacts
+*.db
+test.db
+backend/test.db
+
+# Local environment files (secrets must not be baked into images)
+.env
+backend/.env
+frontend/.env
+docker.env
+
+# Large archives
+*.zip
+backend.zip
+
+# IDE / OS noise
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Test artefacts and screenshots
+frontend/phase1-screenshots
+frontend/phase2-screenshots
+frontend/phase3-screenshots
+frontend/test_screenshots

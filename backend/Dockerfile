@@ -1,6 +1,8 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
-# Install system dependencies for WeasyPrint and compilation
+# Install system dependencies required by WeasyPrint (Pango/Cairo), psycopg2
+# compilation, and general tooling. curl is included so Semgrep can fetch
+# remote rule sets at scan time without outbound-network restrictions.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
@@ -11,28 +13,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     libffi-dev \
     git \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory inside the container
 WORKDIR /app
 
-# Copy requirements file first to utilize Docker layer caching
+# Copy requirements file first to leverage Docker layer caching —
+# this layer is only rebuilt when requirements.txt changes.
 COPY requirements.txt .
 
-# Install Python requirements
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source code
+# Copy application source code into /app/backend so that the module path
+# backend.main:app resolves correctly with PYTHONPATH=/app
 COPY . /app/backend
 
-# Create upload directory
+# Create uploads directory (will be overridden by the bind-mount volume in
+# docker-compose, but ensures the path exists for standalone container runs)
 RUN mkdir -p /app/uploads
 
-# Expose port
+# Expose application port
 EXPOSE 8000
 
-# Set Python path to find backend package
+# PYTHONPATH allows "import backend.*" to resolve from /app
 ENV PYTHONPATH=/app
 
-# Start the application using Uvicorn
+# Production entrypoint — no --reload (dev-only flag)
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
