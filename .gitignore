@@ -11,4 +11,7 @@ node_modules/
 .env.local
 frontend/node_modules/
 frontend/dist/
+.gemini/
+*.pyc
+**/__pycache__/
 

@@ -7,7 +7,7 @@ from backend.database.session import get_db
 from backend.models.models import Project, ScanHistory, Vulnerability, File, User
 from backend.api.auth import get_current_user
 from backend.reports.html_report import generate_html_report
-from backend.reports.pdf_report import generate_pdf_report
+from backend.reports.pdf_report import generate_pdf_report, generate_pdf_html, generate_pdf_report_for_project
 from backend.reports.json_csv_report import generate_json_report, generate_csv_report
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -57,12 +57,12 @@ def download_project_report(
         return HTMLResponse(content=html_content)
         
     elif format == "pdf":
-        html_content = generate_html_report(project, scan, vulnerabilities)
+        html_content = generate_pdf_html(project, scan, vulnerabilities)
         pdf_bytes = generate_pdf_report(html_content)
         if pdf_bytes is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="PDF generation failed. The host might be missing system library dependencies (Pango/Cairo) for WeasyPrint. Please try HTML or run in Docker."
+                detail="PDF generation failed. Please try HTML or run in Docker."
             )
         return Response(
             content=pdf_bytes,
