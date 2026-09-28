@@ -1,6 +1,7 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, Link } from "@tanstack/react-router";
 import { Bell, LogOut, Search } from "lucide-react";
 import { clearToken } from "../../api/client";
+import logoImg from "../../assets/logo.png";
 
 export function TopNav({ email }: { email?: string | undefined }) {
   const navigate = useNavigate();
@@ -8,9 +9,16 @@ export function TopNav({ email }: { email?: string | undefined }) {
 
   return (
     <header className="glass-card sticky top-0 z-20 flex items-center gap-4 border-x-0 border-t-0 px-5 py-4 sm:px-8">
-      <span className="text-[18px] font-medium italic tracking-[-0.01em] text-foreground">
-        SentinelAI
-      </span>
+      <Link to="/dashboard" className="flex items-center gap-2.5 transition-opacity hover:opacity-90">
+        <img
+          src={logoImg}
+          alt="SentinelAI logo"
+          className="size-7 object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]"
+        />
+        <span className="text-[18px] font-medium italic tracking-[-0.01em] text-foreground">
+          SentinelAI
+        </span>
+      </Link>
 
       <div className="glass-field ml-2 hidden h-[42px] flex-1 items-center gap-2 rounded-full px-4 md:flex">
         <Search className="size-[16px] shrink-0 text-muted-foreground" />

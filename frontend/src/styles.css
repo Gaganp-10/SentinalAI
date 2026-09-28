@@ -331,4 +331,43 @@ body {
   color: oklch(0.78 0.16 55);
 }
 
+/* ── Floating Labels & Autofill Fix ────────────────────────── */
+.floating-label {
+  transition:
+    top 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    font-size 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 180ms ease,
+    opacity 180ms ease;
+  will-change: top, transform, font-size;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-label {
+    transition: none !important;
+  }
+}
+
+/* Chrome/Safari/Edge dark-glass autofill styling */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--foreground) !important;
+  -webkit-box-shadow: 0 0 0 1000px oklch(0.15 0.02 264 / 85%) inset !important;
+  box-shadow: 0 0 0 1000px oklch(0.15 0.02 264 / 85%) inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: var(--foreground);
+}
+
+/* Ensure label floats properly when browser autofill is active */
+input:-webkit-autofill ~ .floating-label,
+input:autofill ~ .floating-label {
+  top: 9px !important;
+  transform: translateY(0) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  color: var(--muted-foreground) !important;
+}
+
 

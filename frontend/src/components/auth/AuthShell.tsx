@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { ChevronLeft } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import authBg from "../../assets/auth-bg.jpg";
+import logoImg from "../../assets/logo.png";
 
 export function AuthShell({
   children,
@@ -63,9 +64,16 @@ export function AuthHeading({ title }: { title: string }) {
       transition={{ duration: 0.65, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
       className="flex flex-col items-center text-center"
     >
-      <span className="text-[20px] font-medium italic tracking-[-0.01em] text-foreground">
-        SentinelAI
-      </span>
+      <div className="flex items-center gap-2.5">
+        <img
+          src={logoImg}
+          alt="SentinelAI logo"
+          className="size-8 object-contain drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)]"
+        />
+        <span className="text-[20px] font-medium italic tracking-[-0.01em] text-foreground">
+          SentinelAI
+        </span>
+      </div>
       <h1 className="mt-3 max-w-[290px] text-[30px] font-semibold leading-[1.18] tracking-[-0.03em] text-foreground">
         {title}
       </h1>

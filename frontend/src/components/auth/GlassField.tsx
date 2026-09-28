@@ -15,15 +15,13 @@ export function GlassField({ label, icon, error, isPassword, ...props }: GlassFi
   const [focused, setFocused] = useState(false);
   const [reveal, setReveal] = useState(false);
 
-  return (
-    <div className="space-y-2">
-      <label
-        htmlFor={id}
-        className="block pl-1 text-[13.5px] font-normal tracking-[-0.01em] text-muted-foreground"
-      >
-        {label}
-      </label>
+  const hasValue =
+    (props.value !== undefined && props.value !== "") ||
+    (props.defaultValue !== undefined && props.defaultValue !== "");
+  const isFloating = focused || Boolean(hasValue);
 
+  return (
+    <div className="space-y-1.5">
       <motion.div
         animate={{ scale: focused ? 1.01 : 1 }}
         transition={{ type: "spring", stiffness: 420, damping: 30 }}
@@ -42,20 +40,44 @@ export function GlassField({ label, icon, error, isPassword, ...props }: GlassFi
           {icon}
         </span>
 
-        <input
-          id={id}
-          {...props}
-          type={isPassword ? (reveal ? "text" : "password") : props.type}
-          onFocus={(e) => {
-            setFocused(true);
-            props.onFocus?.(e);
-          }}
-          onBlur={(e) => {
-            setFocused(false);
-            props.onBlur?.(e);
-          }}
-          className="min-w-0 flex-1 bg-transparent text-[15px] font-normal tracking-[-0.01em] text-foreground outline-none placeholder:text-muted-foreground/80"
-        />
+        <div className="relative flex h-full flex-1 flex-col justify-center min-w-0">
+          <input
+            id={id}
+            {...props}
+            type={isPassword ? (reveal ? "text" : "password") : props.type}
+            placeholder={props.placeholder || " "}
+            onFocus={(e) => {
+              setFocused(true);
+              props.onFocus?.(e);
+            }}
+            onBlur={(e) => {
+              setFocused(false);
+              props.onBlur?.(e);
+            }}
+            className={cn(
+              "peer w-full bg-transparent text-[14.5px] font-normal tracking-[-0.01em] text-foreground outline-none",
+              "pt-3.5 pb-0.5",
+              !focused && "placeholder:text-transparent",
+              focused && "placeholder:text-muted-foreground/45",
+            )}
+          />
+
+          <label
+            htmlFor={id}
+            className={cn(
+              "floating-label pointer-events-none absolute left-0 select-none",
+              "top-1/2 -translate-y-1/2 text-[14px] text-muted-foreground/75 font-normal",
+              isFloating && "!top-[9px] !translate-y-0 !text-[11px] !font-medium text-muted-foreground",
+              focused && "!text-foreground/90",
+              "peer-focus:!top-[9px] peer-focus:!translate-y-0 peer-focus:!text-[11px] peer-focus:!font-medium peer-focus:!text-foreground/90",
+              "peer-[:not(:placeholder-shown)]:!top-[9px] peer-[:not(:placeholder-shown)]:!translate-y-0 peer-[:not(:placeholder-shown)]:!text-[11px] peer-[:not(:placeholder-shown)]:!font-medium",
+              "peer-autofill:!top-[9px] peer-autofill:!translate-y-0 peer-autofill:!text-[11px] peer-autofill:!font-medium",
+              "peer-[-webkit-autofill]:!top-[9px] peer-[-webkit-autofill]:!translate-y-0 peer-[-webkit-autofill]:!text-[11px] peer-[-webkit-autofill]:!font-medium",
+            )}
+          >
+            {label}
+          </label>
+        </div>
 
         {isPassword && (
           <button
