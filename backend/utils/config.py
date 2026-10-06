@@ -12,6 +12,7 @@ class Settings(BaseSettings):
         env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=True,
+        extra="ignore",
     )
 
     PROJECT_NAME: str = "Security Vulnerability Detector and Fixer"
@@ -28,6 +29,11 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
 
     # AI Provider configuration
+    AI_PROVIDER: str = "template"   # "groq" | "ollama" | "openai" | "template"
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    OLLAMA_BASE_URL: str = "http://localhost:11434/v1"
+    OLLAMA_MODEL: str = "qwen2.5-coder:7b"
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL: str = "gpt-4o-mini"
 
