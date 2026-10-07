@@ -1,4 +1,5 @@
 import ast
+import logging
 import os
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
@@ -10,6 +11,8 @@ from backend.models.models import Vulnerability, File, Project, User
 from backend.models.schemas import VulnerabilityOut, VulnerabilityUpdate, ApplyFixResponse
 from backend.api.auth import get_current_user
 from backend.utils.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/vulnerabilities", tags=["Vulnerabilities"])
 
@@ -186,10 +189,11 @@ def regenerate_vulnerability_fix(
     
     # Regenerate secure code block
     from backend.fixer.fix_generator import generate_patched_code
-    _, corrected_snippet, _, auto_fixable = generate_patched_code(finding, full_file_content)
+    _, corrected_snippet, _, auto_fixable, fix_source = generate_patched_code(finding, full_file_content)
     
     vuln.suggested_fix = corrected_snippet
     vuln.auto_fixable = auto_fixable
+    vuln.fix_source = fix_source
     db.commit()
     db.refresh(vuln)
     return vuln
@@ -340,9 +344,51 @@ def apply_vulnerability_fix(
             detail=f"Failed to update file on disk: {e}"
         )
 
+    is_ai_fix = (vuln.fix_source == "ai")
+
+    # If this is an AI-generated fix, re-scan to verify that the vulnerability is actually resolved.
+    if is_ai_fix:
+        try:
+            from backend.detectors.orchestrator import Orchestrator
+            orchestrator = Orchestrator()
+            new_findings = orchestrator.scan_project(project_dir)
+
+            vuln_type_lower = (vuln.type or "").lower().strip()
+            target_rel = os.path.normpath(vuln.file.filepath).replace("\\", "/")
+
+            still_present = any(
+                os.path.normpath(f.file_path).replace("\\", "/") == target_rel and
+                (f.type or "").lower().strip() == vuln_type_lower
+                for f in new_findings
+            )
+
+            if still_present:
+                # Rollback to the original content
+                with open(temp_file_path, "w", encoding="utf-8") as tf:
+                    tf.write(file_content)
+                os.replace(temp_file_path, full_file_path)
+
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="The AI-generated fix did not resolve the vulnerability when re-scanned, so changes were rolled back. Please review the recommendation and edit manually, or try regenerating the fix."
+                )
+        except HTTPException:
+            raise
+        except Exception as scan_err:
+            logger.error(f"Failed to re-scan for fix verification: {scan_err}")
+            with open(temp_file_path, "w", encoding="utf-8") as tf:
+                tf.write(file_content)
+            os.replace(temp_file_path, full_file_path)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Re-scan verification failed: {scan_err}. Changes were rolled back."
+            )
+
     new_size = len(new_content.encode("utf-8"))
     vuln.file.size = new_size
     vuln.fixed = True
+    if not vuln.fix_source:
+        vuln.fix_source = "template"
 
     db.commit()
     db.refresh(vuln)
@@ -353,6 +399,7 @@ def apply_vulnerability_fix(
         "file": {
             "id": vuln.file.id,
             "size": vuln.file.size
-        }
+        },
+        "apply_status": "verified" if is_ai_fix else "applied"
     }
 

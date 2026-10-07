@@ -1,7 +1,8 @@
+import ast
 import difflib
 import logging
 import re
-from typing import Tuple
+from typing import Tuple, Optional
 from backend.detectors.schema import Finding
 from backend.ai.provider import get_ai_provider, FallbackTemplateProvider
 
@@ -199,7 +200,129 @@ def generate_template_fix(finding: Finding) -> Tuple[str, bool]:
     return snippet, False
 
 
-def generate_patched_code(finding: Finding, full_file_content: str) -> Tuple[str, str, str, bool]:
+def is_ai_fix_eligible(finding: Finding) -> bool:
+    """
+    Determines if a finding is eligible for an AI-generated code fix candidate.
+    Only actionable call-site / function-level vulnerabilities with a clear code context
+    are eligible. Broad/advisory import-level findings stay permanently manual.
+    """
+    snippet = (finding.code_snippet or "").strip()
+    if not snippet:
+        return False
+
+    # Advisory import-level findings must stay manual
+    if snippet.startswith("import ") or snippet.startswith("from "):
+        return False
+    type_lower = (finding.type or "").lower().strip()
+    if "blacklist_import" in type_lower or "blacklist_imports" in type_lower:
+        return False
+    if "blacklist" in type_lower and (snippet.startswith("import ") or snippet.startswith("from ")):
+        return False
+
+    eligible_keywords = [
+        "pickle", "eval", "exec", "yaml", "deserialization",
+        "random", "ssl", "tls", "xml", "subprocess", "command",
+        "path_traversal", "file", "timeout", "cryptographic",
+        "hashlib", "sql", "injection", "secret", "password"
+    ]
+    return any(kw in type_lower or kw in snippet.lower() for kw in eligible_keywords)
+
+
+def _generate_ai_snippet_fix(finding: Finding, full_file_content: str, provider) -> Tuple[str, str, str, bool]:
+    """
+    Asks the AI provider to generate a snippet-level fix to replace finding.code_snippet.
+    Validates syntax with ast.parse before confirming success.
+    Returns: (corrected_file, corrected_snippet, diff, success)
+    """
+    snippet = finding.code_snippet or ""
+    if not snippet or snippet not in full_file_content:
+        return full_file_content, snippet, "", False
+
+    prompt = f"""You are an automated secure code remediation assistant.
+You must fix a security vulnerability in Python code.
+
+Vulnerability Type: {finding.type}
+Description: {finding.description}
+File: {finding.file_path}
+
+ORIGINAL VULNERABLE SNIPPET:
+```python
+{snippet}
+```
+
+SURROUNDING FILE CONTEXT:
+```python
+{full_file_content[:3000]}
+```
+
+TASK:
+Provide ONLY the exact replacement code snippet that directly replaces the ORIGINAL VULNERABLE SNIPPET above.
+Preserve the exact leading indentation of the original snippet so it can be replaced cleanly.
+Do NOT include markdown formatting (do NOT use ``` or ```python).
+Do NOT include explanations, warnings, comments about what changed, or conversational text.
+Output pure, runnable Python code only.
+"""
+    try:
+        if hasattr(provider, "_create_completion"):
+            response = provider._create_completion(
+                messages=[
+                    {"role": "system", "content": "You are an automated secure code fixer. Output only the replacement code snippet. No markdown code fences, no explanations."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1
+            )
+        else:
+            response = provider.client.chat.completions.create(
+                model=provider.model,
+                messages=[
+                    {"role": "system", "content": "You are an automated secure code fixer. Output only the replacement code snippet. No markdown code fences, no explanations."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1
+            )
+        raw_fix = response.choices[0].message.content or ""
+        clean_fix = raw_fix.strip()
+        if clean_fix.startswith("```"):
+            lines = clean_fix.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            clean_fix = "\n".join(lines).strip("\r\n")
+
+        if not clean_fix:
+            return full_file_content, snippet, "", False
+
+        if snippet.endswith("\n") and not clean_fix.endswith("\n"):
+            clean_fix += "\n"
+
+        if snippet not in full_file_content:
+            return full_file_content, clean_fix, "", False
+
+        corrected_file = full_file_content.replace(snippet, clean_fix, 1)
+
+        try:
+            ast.parse(corrected_file)
+        except SyntaxError as se:
+            logger.warning(f"AI-generated fix produced invalid syntax: {se}")
+            return full_file_content, clean_fix, "", False
+
+        orig_lines = full_file_content.splitlines(keepends=True)
+        fixed_lines = corrected_file.splitlines(keepends=True)
+        diff_list = list(difflib.unified_diff(
+            orig_lines,
+            fixed_lines,
+            fromfile=finding.file_path,
+            tofile=finding.file_path + " (secured)"
+        ))
+        diff = "".join(diff_list)
+        return corrected_file, clean_fix, diff, True
+    except Exception as e:
+        logger.error(f"Error generating AI snippet fix: {e}")
+        return full_file_content, snippet, "", False
+
+
+def generate_patched_code(finding: Finding, full_file_content: str) -> Tuple[str, str, str, bool, Optional[str]]:
     """
     Generates a secure fix for the vulnerability.
     
@@ -208,84 +331,35 @@ def generate_patched_code(finding: Finding, full_file_content: str) -> Tuple[str
         corrected_snippet (str): The specific secure code block replacing the vulnerability.
         diff (str): A unified diff showing the exact code changes.
         auto_fixable (bool): True if the fix is automatically applicable, False otherwise.
+        fix_source (Optional[str]): "template" | "ai" | None.
     """
+    # 1. First priority: Deterministic mechanical template fix
+    corrected_snippet, template_auto_fixable = generate_template_fix(finding)
+    if template_auto_fixable and finding.code_snippet and finding.code_snippet in full_file_content:
+        corrected_file = full_file_content.replace(finding.code_snippet, corrected_snippet, 1)
+        orig_lines = full_file_content.splitlines(keepends=True)
+        fixed_lines = corrected_file.splitlines(keepends=True)
+        diff_list = list(difflib.unified_diff(
+            orig_lines,
+            fixed_lines,
+            fromfile=finding.file_path,
+            tofile=finding.file_path + " (secured)"
+        ))
+        diff = "".join(diff_list)
+        return corrected_file, corrected_snippet, diff, True, "template"
+
     provider = get_ai_provider()
-    
+
+    # 2. If running offline/template fallback, or finding not template-fixable
     if isinstance(provider, FallbackTemplateProvider):
-        corrected_snippet, auto_fixable = generate_template_fix(finding)
-        if auto_fixable and finding.code_snippet and finding.code_snippet in full_file_content:
-            corrected_file = full_file_content.replace(finding.code_snippet, corrected_snippet, 1)
-            orig_lines = full_file_content.splitlines(keepends=True)
-            fixed_lines = corrected_file.splitlines(keepends=True)
-            diff_list = list(difflib.unified_diff(
-                orig_lines,
-                fixed_lines,
-                fromfile=finding.file_path,
-                tofile=finding.file_path + " (secured)"
-            ))
-            diff = "".join(diff_list)
-        else:
-            corrected_file = full_file_content
-            diff = ""
-        return corrected_file, corrected_snippet, diff, auto_fixable
+        return full_file_content, corrected_snippet, "", False, None
 
-    # AI Provider path (OpenAIProvider)
-    corrected_file = provider.generate_fix(
-        type_name=finding.type,
-        description=finding.description,
-        code_snippet=finding.code_snippet,
-        full_file_source=full_file_content
-    )
-    
-    orig_lines = full_file_content.splitlines(keepends=True)
-    fixed_lines = corrected_file.splitlines(keepends=True)
-    
-    diff_list = list(difflib.unified_diff(
-        orig_lines,
-        fixed_lines,
-        fromfile=finding.file_path,
-        tofile=finding.file_path + " (secured)"
-    ))
-    diff = "".join(diff_list)
+    # 3. AI provider is configured: check eligibility for AI fix candidate
+    if not is_ai_fix_eligible(finding):
+        return full_file_content, finding.code_snippet or "", "", False, None
 
-    corrected_snippet = ""
-    prompt = f"""
-Vulnerability Type: {finding.type}
-Vulnerable Snippet:
-```python
-{finding.code_snippet or "N/A"}
-```
-Description: {finding.description}
+    ai_file, ai_snippet, ai_diff, success = _generate_ai_snippet_fix(finding, full_file_content, provider)
+    if success:
+        return ai_file, ai_snippet, ai_diff, True, "ai"
 
-Here is the full fixed file:
-```
-{corrected_file}
-```
-
-Return ONLY the specific replacement lines of code that fix the vulnerable snippet. Do NOT include markdown styling (no ```), explanation, or comments.
-"""
-    try:
-        response = provider.client.chat.completions.create(
-            model=provider.model,
-            messages=[
-                {"role": "system", "content": "You are a secure developer. You only output raw, valid code blocks matching the fixed snippet requested."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.1
-        )
-        corrected_snippet = response.choices[0].message.content or ""
-        corrected_snippet = corrected_snippet.strip()
-        if corrected_snippet.startswith("```"):
-            lines = corrected_snippet.splitlines()
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].startswith("```"):
-                lines = lines[:-1]
-            corrected_snippet = "\n".join(lines).strip()
-    except Exception as e:
-        logger.error(f"Failed to generate specific fix snippet: {e}")
-        plus_lines = [line[1:] for line in diff_list if line.startswith("+") and not line.startswith("+++")]
-        corrected_snippet = "".join(plus_lines).strip() or "# See file diff for suggested fix"
-
-    auto_fixable = True
-    return corrected_file, corrected_snippet, diff, auto_fixable
+    return full_file_content, ai_snippet or finding.code_snippet or "", "", False, None

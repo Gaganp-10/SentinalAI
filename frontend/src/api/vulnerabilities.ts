@@ -19,11 +19,13 @@ export type Vulnerability = {
   source_tool: string;
   fixed: boolean;
   auto_fixable?: boolean;
+  fix_source?: string | null;
 };
 
 export type ApplyFixResult = {
   vulnerability: Vulnerability;
   file: { id: string; size: number };
+  apply_status?: string;
 };
 
 export const SEVERITY_ORDER = ["critical", "high", "medium", "low"] as const;

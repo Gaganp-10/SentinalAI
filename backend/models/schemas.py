@@ -74,6 +74,7 @@ class VulnerabilityOut(BaseModel):
     source_tool: str
     fixed: bool
     auto_fixable: bool = True
+    fix_source: Optional[str] = None  # "template" | "ai" | None
 
     class Config:
         from_attributes = True
@@ -100,6 +101,7 @@ class FileMetadataOut(BaseModel):
 class ApplyFixResponse(BaseModel):
     vulnerability: VulnerabilityOut
     file: FileMetadataOut
+    apply_status: str = "applied"  # "applied" | "verified" | "rolled_back"
 
 
 

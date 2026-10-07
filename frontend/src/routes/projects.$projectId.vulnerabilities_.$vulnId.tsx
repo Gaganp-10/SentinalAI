@@ -138,7 +138,11 @@ function VulnerabilityDetailPage() {
     mutationFn: () => applyFix(vulnId),
     onSuccess: async (result) => {
       await refresh();
-      toast.success(`Fix applied — file is now ${result.file.size} bytes`);
+      if (result.apply_status === "verified") {
+        toast.success(`AI fix applied & verified by re-scan — file is now ${result.file.size} bytes`);
+      } else {
+        toast.success(`Fix applied — file is now ${result.file.size} bytes`);
+      }
     },
     onError: (error) => {
       const message = toApiErrorMessage(error);
@@ -235,6 +239,20 @@ function VulnerabilityDetailPage() {
                 {data.cwe_id && <Tag>{data.cwe_id}</Tag>}
                 {data.owasp_category && <Tag>{data.owasp_category}</Tag>}
                 <Tag>{Math.round((data.confidence ?? 0) * 100)}% confidence</Tag>
+                {data.fixed && (
+                  <Tag tone="text-emerald-400">
+                    {data.fix_source === "ai"
+                      ? "AI-verified by re-scan"
+                      : data.fix_source === "template"
+                      ? "Verified secure pattern"
+                      : "Resolved"}
+                  </Tag>
+                )}
+                {!data.fixed && data.auto_fixable && (
+                  <Tag tone="text-sky-400">
+                    {data.fix_source === "ai" ? "AI fix candidate" : "Auto-fixable"}
+                  </Tag>
+                )}
               </div>
               <p className="mt-3 font-mono text-[13px] text-muted-foreground">
                 {data.file?.filepath ?? data.file?.filename ?? `file ${data.file_id}`} · line{" "}
@@ -278,7 +296,11 @@ function VulnerabilityDetailPage() {
                 </p>
                 <p className="mt-0.5 text-[13px] text-muted-foreground">
                   {data.fixed
-                    ? "This finding is marked resolved on the backend."
+                    ? data.fix_source === "ai"
+                      ? "Remediated with an AI-generated patch and verified secure by re-scan."
+                      : data.fix_source === "template"
+                      ? "Remediated using a verified secure template pattern."
+                      : "This finding is marked resolved on the backend."
                     : "This finding is still unresolved."}
                 </p>
               </div>
@@ -370,7 +392,13 @@ function VulnerabilityDetailPage() {
                     ) : (
                       <Wand2 className="size-[15px]" />
                     )}
-                    {data.fixed ? "Fix applied" : apply.isPending ? "Applying" : "Apply fix"}
+                    {data.fixed
+                      ? "Fix applied"
+                      : apply.isPending
+                      ? data.fix_source === "ai"
+                        ? "Verifying fix..."
+                        : "Applying fix..."
+                      : "Apply fix"}
                   </button>
                 )}
 

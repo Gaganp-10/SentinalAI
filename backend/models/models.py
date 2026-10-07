@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, Integer, Float, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, Float, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from backend.database.session import Base
@@ -63,6 +63,11 @@ class Vulnerability(Base):
     source_tool = Column(String, nullable=False)  # bandit/semgrep/ast/ai
     fixed = Column(Boolean, default=False)
     auto_fixable = Column(Boolean, default=True)
+    # Tracks which subsystem produced the applied fix:
+    #   "template" = deterministic rule-based fix (proven safe, applied without re-scan)
+    #   "ai"       = LLM-generated fix (applied only after re-scan confirms vulnerability gone)
+    #   None       = not yet fixed
+    fix_source = Column(String, nullable=True)
 
     file = relationship("File", back_populates="vulnerabilities")
 
