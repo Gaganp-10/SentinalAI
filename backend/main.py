@@ -25,6 +25,9 @@ try:
             if 'auto_fixable' not in columns:
                 conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN auto_fixable BOOLEAN DEFAULT 1"))
                 conn.commit()
+            if 'fix_source' not in columns:
+                conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN fix_source VARCHAR"))
+                conn.commit()
     logger.info("Database tables initialized successfully.")
 except Exception as e:
     logger.error(f"Failed to initialize database tables: {e}")

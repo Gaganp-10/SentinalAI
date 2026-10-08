@@ -15,6 +15,7 @@ import { SecurityScoreGauge } from "../components/project/SecurityScoreGauge";
 import { SeverityBreakdownChart } from "../components/project/SeverityBreakdownChart";
 import { ScanTimeline } from "../components/project/ScanTimeline";
 import { CodebaseVulnerabilityMap } from "../components/project/CodebaseVulnerabilityMap";
+import { SecurityCopilot } from "../components/project/SecurityCopilot";
 import { getCurrentUser } from "../api/auth";
 import { clearToken, toApiErrorMessage } from "../api/client";
 import { getProject, latestScan, listScans, type ScanHistory } from "../api/projects";
@@ -242,6 +243,8 @@ function ProjectDetailPage() {
           />
         </div>
       </main>
+
+      <SecurityCopilot />
     </DashboardShell>
   );
 }

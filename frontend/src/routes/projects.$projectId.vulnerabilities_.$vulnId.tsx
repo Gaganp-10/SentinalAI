@@ -20,6 +20,7 @@ import { TopNav } from "../components/dashboard/TopNav";
 import { Markdown } from "../components/project/Markdown";
 import { CodeViewer } from "../components/project/CodeViewer";
 import { FixDiffViewer } from "../components/project/FixDiffViewer";
+import { SecurityCopilot } from "../components/project/SecurityCopilot";
 import { getCurrentUser } from "../api/auth";
 import { clearToken, toApiErrorMessage } from "../api/client";
 import { getProject } from "../api/projects";
@@ -439,6 +440,15 @@ function VulnerabilityDetailPage() {
           </>
         )}
       </main>
+
+      <SecurityCopilot
+        vulnId={vulnId}
+        findingContext={{
+          type: data?.type,
+          severity: data?.severity,
+          filename: data?.file?.filename,
+        }}
+      />
     </DashboardShell>
   );
 }

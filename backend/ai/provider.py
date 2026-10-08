@@ -50,7 +50,10 @@ Refactor the code snippet `{code_snippet or ""}` to follow industry secure codin
         return comment + full_file_source
 
     def ask_question(self, question: str, type_name: str, description: str, code_snippet: Optional[str], full_file_source: Optional[str]) -> str:
-        return f"AI Mentor is running in offline template-fallback mode because no OPENAI_API_KEY was configured. The finding is a {type_name} ({description}). Please check standard OWASP top 10 rules for advice on how to address it."
+        if type_name and type_name != "General security question":
+            desc_text = f" ({description})" if description else ""
+            return f"AI Mentor is running in offline template-fallback mode because no AI API key was configured. The finding is a {type_name}{desc_text}. Please check standard OWASP top 10 rules for advice on how to address it."
+        return "AI Mentor is running in offline template-fallback mode because no AI API key was configured. For general security questions, please consult OWASP Top 10 guidelines and industry secure coding practices."
 
 
 class OpenAIProvider(AIProvider):
@@ -196,24 +199,28 @@ Instructions:
             return self._fallback.generate_fix(type_name, description, code_snippet, full_file_source)
 
     def ask_question(self, question: str, type_name: str, description: str, code_snippet: Optional[str], full_file_source: Optional[str]) -> str:
-        prompt = f"""
-You are a security mentor answering a developer's question about a specific vulnerability finding.
-Vulnerability details:
-- Type: {type_name}
-- Description: {description}
-- Code Snippet:
-```
-{code_snippet or "N/A"}
-```
-- Full File Source:
-```
-{full_file_source or "N/A"}
-```
+        context_parts = []
+        if type_name and type_name != "General security question":
+            context_parts.append(f"- Type: {type_name}")
+        if description:
+            context_parts.append(f"- Description: {description}")
+        if code_snippet:
+            context_parts.append(f"- Code Snippet:\n```\n{code_snippet}\n```")
+        if full_file_source:
+            context_parts.append(f"- Full File Source:\n```\n{full_file_source}\n```")
 
-Question:
+        if context_parts:
+            context_section = "Vulnerability details:\n" + "\n".join(context_parts) + "\n\n"
+            intro = "You are a security mentor answering a developer's question about a specific vulnerability finding."
+        else:
+            context_section = ""
+            intro = "You are a security mentor answering a developer's question about application security."
+
+        prompt = f"""{intro}
+{context_section}Question:
 {question}
 
-Provide a concise, helpful security advice explaining what the developer should do or clarifying the concept.
+Provide concise, helpful security advice explaining what the developer should do or clarifying the concept.
 """
         try:
             response = self._create_completion(

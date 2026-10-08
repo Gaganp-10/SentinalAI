@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
 import { TopNav } from "../components/dashboard/TopNav";
 import { VulnerabilityCard } from "../components/project/VulnerabilityCard";
+import { SecurityCopilot } from "../components/project/SecurityCopilot";
 import { getCurrentUser } from "../api/auth";
 import { clearToken, toApiErrorMessage } from "../api/client";
 import { getProject } from "../api/projects";
@@ -283,6 +284,8 @@ function VulnerabilitiesPage() {
           </section>
         )}
       </main>
+
+      <SecurityCopilot />
     </DashboardShell>
   );
 }
