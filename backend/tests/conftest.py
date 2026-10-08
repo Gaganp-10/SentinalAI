@@ -37,7 +37,13 @@ def db():
                 pass
 
 @pytest.fixture(scope="function")
-def client(db):
+def client(db, monkeypatch):
+    import backend.database.session as session_module
+    import backend.api.auth as auth_module
+
+    monkeypatch.setattr(session_module, "SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr(auth_module, "SessionLocal", TestingSessionLocal)
+
     def override_get_db():
         try:
             yield db
@@ -48,3 +54,4 @@ def client(db):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+

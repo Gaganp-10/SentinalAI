@@ -1,13 +1,21 @@
-from pydantic import BaseModel, EmailStr, model_validator
+from pydantic import BaseModel, EmailStr, model_validator, field_validator
 from typing import Optional, List, Any
 from uuid import UUID
 from datetime import datetime
+
+from backend.utils.security import validate_password_strength
 
 # --- Auth Schemas ---
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        """Enforce shared password rules at the schema level (returns 422 on violation)."""
+        return validate_password_strength(v)
 
 class UserOut(BaseModel):
     id: UUID
@@ -29,6 +37,20 @@ class LoginRequest(BaseModel):
 
 class GoogleAuthRequest(BaseModel):
     access_token: str
+
+# --- Password Reset Schemas ---
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        """Reuse the same rules as signup so there is a single source of truth."""
+        return validate_password_strength(v)
 
 # --- Project Schemas ---
 class ProjectCreate(BaseModel):

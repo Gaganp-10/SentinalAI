@@ -51,7 +51,9 @@ function RegisterPage() {
     const next: typeof errors = {};
     if (username.trim().length < 3) next.username = "Use at least 3 characters";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) next.email = "Enter a valid work email address";
-    if (password.length < 8) next.password = "Use at least 8 characters";
+    if (password.trim() === "") next.password = "Password cannot be whitespace only";
+    else if (password.length < 8) next.password = "Use at least 8 characters";
+    else if (new TextEncoder().encode(password).length > 72) next.password = "Use at most 72 bytes";
     if (confirm !== password) next.confirm = "Passwords do not match";
     setErrors(next);
     setFormError(undefined);

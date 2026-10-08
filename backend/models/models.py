@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, Integer, Float, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, DateTime, Integer, Float, ForeignKey, Text, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from backend.database.session import Base
@@ -16,6 +16,9 @@ class User(Base):
     is_active = Column(Boolean, default=True)
 
     projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship(
+        "PasswordResetToken", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class Project(Base):
@@ -86,3 +89,35 @@ class ScanHistory(Base):
     status = Column(String, nullable=False)  # enum: pending/running/completed/failed
 
     project = relationship("Project", back_populates="scan_histories")
+
+
+class PasswordResetToken(Base):
+    """
+    Stores SHA-256 hashes of password-reset tokens.
+
+    The raw token is NEVER persisted; only its SHA-256 hash is stored.
+    The raw token travels in the reset URL to the user's email client and
+    is verified by re-hashing the submitted value and doing a hash lookup.
+
+    Lifecycle:
+      - created_at / expires_at:  token is valid until expires_at
+      - used_at (nullable):        set to now() when the token is consumed;
+                                   any token with used_at IS NOT NULL is rejected
+    """
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # SHA-256 hex digest of the raw token — unique and indexed for fast lookup
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)  # set on first (and only) use
+
+    user = relationship("User", back_populates="password_reset_tokens")

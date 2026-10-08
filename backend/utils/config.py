@@ -20,6 +20,23 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "SUPER_SECRET_KEY_CHANGE_ME_IN_PRODUCTION_1234567890"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     GOOGLE_CLIENT_ID: str = "1020864929554-v9mb9l065pedkr9ah01a1n3jsggfbc5c.apps.googleusercontent.com"
+
+    # Environment mode — guards the console email backend
+    # Values: "development" | "production" | "staging"
+    ENV: str = "development"
+
+    # Password reset
+    FRONTEND_URL: str = "http://localhost:3000"
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+
+    # Email backend: "console" (dev only) | "smtp"
+    EMAIL_BACKEND: str = "console"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_USE_TLS: bool = True  # STARTTLS
     
     # Postgres configuration
     POSTGRES_SERVER: str = "db"
