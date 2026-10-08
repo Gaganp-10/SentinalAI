@@ -51,9 +51,13 @@ export function UploadZone({
         </span>
 
         <h2 className="mt-5 text-[18px] font-semibold tracking-[-0.02em] text-foreground">
-          {uploading ? "Uploading…" : "Drop a source file to scan"}
+          {uploading ? "Uploading…" : "Drop a source file or ZIP to scan"}
         </h2>
         <p className="mt-2 max-w-[380px] text-[13.5px] text-muted-foreground">
+          Upload a single file or a <strong>.zip</strong> archive of your whole project —
+          all contained source files will be extracted and scanned automatically.
+        </p>
+        <p className="mt-1 max-w-[380px] text-[12px] text-muted-foreground/70">
           {ACCEPTED_EXTENSIONS.join(" · ")}
         </p>
 
@@ -75,7 +79,7 @@ export function UploadZone({
           onClick={() => inputRef.current?.click()}
           className="social-btn mt-6 rounded-full px-6 py-2.5 text-[13.5px] font-medium text-foreground disabled:opacity-50"
         >
-          Select File
+          Select File or ZIP
         </button>
 
         {uploading && (

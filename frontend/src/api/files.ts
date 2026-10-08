@@ -33,17 +33,22 @@ export async function uploadFile(
   projectId: string,
   file: File,
   onProgress?: (percent: number) => void,
-): Promise<ProjectFile> {
+): Promise<ProjectFile[]> {
   const form = new FormData();
   form.append("file", file);
 
-  const { data } = await apiClient.post<ProjectFile>(`/api/projects/${projectId}/files`, form, {
-    onUploadProgress: (event) => {
-      if (!onProgress) return;
-      if (event.total) onProgress(Math.round((event.loaded / event.total) * 100));
+  const { data } = await apiClient.post<ProjectFile | ProjectFile[]>(
+    `/api/projects/${projectId}/files`,
+    form,
+    {
+      onUploadProgress: (event) => {
+        if (!onProgress) return;
+        if (event.total) onProgress(Math.round((event.loaded / event.total) * 100));
+      },
     },
-  });
-  return data;
+  );
+  // Backend returns a list for ZIPs and also a list for single files (response_model=List[FileOut])
+  return Array.isArray(data) ? data : [data];
 }
 
 export async function startScan(projectId: string): Promise<ScanHistory> {

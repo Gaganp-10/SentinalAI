@@ -134,9 +134,13 @@ function ProjectDetailPage() {
   const upload = useMutation({
     mutationFn: (file: File) => uploadFile(projectId, file, setProgress),
     onMutate: () => setProgress(0),
-    onSuccess: async (file) => {
+    onSuccess: async (uploadedFiles) => {
       await queryClient.invalidateQueries({ queryKey: ["projects", projectId, "files"] });
-      toast.success(`Uploaded ${file.filename}`);
+      if (uploadedFiles.length === 1) {
+        toast.success(`Uploaded ${uploadedFiles[0].filename}`);
+      } else {
+        toast.success(`Uploaded ${uploadedFiles.length} files from ZIP archive`);
+      }
     },
     onError: (error) => toast.error(toApiErrorMessage(error)),
   });
