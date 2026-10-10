@@ -57,7 +57,11 @@ class Settings(BaseSettings):
     # Uploads configuration
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
+    MAX_MANIFEST_UPLOAD_SIZE_MB: int = 10
     ALLOWED_EXTENSIONS: List[str] = ["py", "js", "jsx", "ts", "tsx", "java", "c", "cpp", "h", "php", "zip"]
+
+    # OSV.dev SCA configuration
+    OSV_API_BASE_URL: str = "https://api.osv.dev"
 
     # CORS configuration
     ALLOWED_ORIGINS: List[str] = ["*"]

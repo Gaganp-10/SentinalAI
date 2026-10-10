@@ -87,6 +87,8 @@ class ScanHistory(Base):
     medium_count = Column(Integer, default=0)
     low_count = Column(Integer, default=0)
     status = Column(String, nullable=False)  # enum: pending/running/completed/failed
+    warnings = Column(Text, nullable=True)  # JSON-encoded list of warning strings
+    dependency_summary = Column(Text, nullable=True)  # JSON-encoded dict: {"checked": N, "not_checked": M, "manifests": K}
 
     project = relationship("Project", back_populates="scan_histories")
 

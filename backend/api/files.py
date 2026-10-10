@@ -12,7 +12,7 @@ from backend.models.models import File as DBFile, Project, User
 from backend.models.schemas import FileOut
 from backend.api.auth import get_current_user
 from backend.utils.config import settings
-from backend.parser.language_detect import detect_language
+from backend.parser.language_detect import detect_language, is_manifest_filename
 
 router = APIRouter(prefix="", tags=["Files"])
 
@@ -49,24 +49,27 @@ def upload_files(
     file_size = file.file.tell()
     file.file.seek(0)
     
-    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    if file_size > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds maximum upload size of {settings.MAX_UPLOAD_SIZE_MB}MB"
-        )
-        
     filename = file.filename
     _, ext = os.path.splitext(filename.lower())
     ext_clean = ext.lstrip(".")
+    is_manifest = is_manifest_filename(filename)
     
-    if ext_clean not in settings.ALLOWED_EXTENSIONS:
+    max_mb = settings.MAX_MANIFEST_UPLOAD_SIZE_MB if is_manifest else settings.MAX_UPLOAD_SIZE_MB
+    max_bytes = max_mb * 1024 * 1024
+    if file_size > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds maximum upload size of {max_mb}MB"
+        )
+    
+    if not is_manifest and ext_clean not in settings.ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File extension '{ext_clean}' is not allowed. Supported: {settings.ALLOWED_EXTENSIONS}"
         )
         
     saved_files = []
+    IGNORED_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", "build", "dist", "target", ".idea", ".vscode"}
     
     if ext_clean == "zip":
         temp_zip_path = os.path.join(project_upload_dir, f"temp_{filename}")
@@ -86,8 +89,18 @@ def upload_files(
                         )
                 
                 # 2. Second pass: Safely extract and save DB records
+                manifest_max_bytes = settings.MAX_MANIFEST_UPLOAD_SIZE_MB * 1024 * 1024
                 for member in z.infolist():
                     if member.is_dir():
+                        continue
+                    
+                    normalized_parts = member.filename.replace("\\", "/").strip("/").split("/")
+                    # Skip files inside ignored directories (e.g. node_modules)
+                    if any(part in IGNORED_DIRS for part in normalized_parts[:-1]):
+                        continue
+
+                    member_is_manifest = is_manifest_filename(member.filename)
+                    if member_is_manifest and member.file_size > manifest_max_bytes:
                         continue
                     
                     target_path = os.path.abspath(os.path.join(project_upload_dir, member.filename))

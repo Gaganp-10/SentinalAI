@@ -16,10 +16,15 @@ router = APIRouter(tags=["Scans"])
 
 logger = logging.getLogger(__name__)
 
+import json
+from backend.ai.explainer import generate_vulnerability_explanation
+from backend.fixer.fix_generator import generate_patched_code
+
 def run_background_scan(project_id: UUID, scan_history_id: UUID):
     """
-    Executes linter tools on the uploaded files, processes the results,
-    invokes the AI layer for explanations/fixes, and updates the scan database.
+    Executes linter tools and dependency SCA on the uploaded files, processes the results,
+    invokes the AI layer ONLY for code findings, and updates the scan database with findings,
+    warnings, and dependency summary.
     """
     # Create isolated database session for the background thread
     db = SessionLocal()
@@ -35,12 +40,22 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
         
         project_dir = os.path.abspath(os.path.join(settings.UPLOAD_DIR, str(project_id)))
         
-        # 1. Run the scan orchestrator
+        all_warnings: List[str] = []
+
+        # 1. Run the code scan orchestrator
         from backend.detectors.orchestrator import Orchestrator
         orchestrator = Orchestrator()
-        findings = orchestrator.scan_project(project_dir)
+        code_findings = orchestrator.scan_project(project_dir)
+        all_warnings.extend(orchestrator.warnings)
+
+        # 2. Run Software Composition Analysis (SCA)
+        from backend.sca.scanner import scan_dependencies
+        dep_findings, sca_warnings, dep_summary = scan_dependencies(project_dir)
+        all_warnings.extend(sca_warnings)
+
+        all_findings = code_findings + dep_findings
         
-        # 2. Clear old vulnerabilities for this project's files to allow fresh scans
+        # 3. Clear old vulnerabilities for this project's files to allow fresh scans
         project_files = db.query(File).filter(File.project_id == project_id).all()
         file_ids = [f.id for f in project_files]
         if file_ids:
@@ -55,29 +70,42 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
         from backend.ai.explainer import generate_vulnerability_explanation
         from backend.fixer.fix_generator import generate_patched_code
         
-        # 3. Process each unique finding
-        for finding in findings:
+        # 4. Process each unique finding
+        for finding in all_findings:
+            norm_path = os.path.normpath(finding.file_path).replace("\\", "/")
             # Map back to DB File record
             db_file = db.query(File).filter(
                 File.project_id == project_id,
-                File.filepath == finding.file_path
+                File.filepath == norm_path
             ).first()
+            if not db_file:
+                db_file = db.query(File).filter(
+                    File.project_id == project_id,
+                    File.filename == os.path.basename(norm_path)
+                ).first()
             if not db_file:
                 continue
                 
-            # Read full source code
-            full_file_path = os.path.join(project_dir, finding.file_path)
-            full_file_content = ""
-            if os.path.exists(full_file_path):
-                try:
-                    with open(full_file_path, "r", encoding="utf-8", errors="ignore") as f:
-                        full_file_content = f.read()
-                except Exception as file_err:
-                    logger.warning(f"Could not read {full_file_path} content: {file_err}")
-            
-            # Generate AI explanation and fix
-            explanation = generate_vulnerability_explanation(finding)
-            _, corrected_snippet, _, auto_fixable, fix_source = generate_patched_code(finding, full_file_content)
+            if finding.type == "vulnerable_dependency":
+                # CRITICAL: Dependency findings must NOT go through AI explain or fix generation
+                explanation = finding.recommendation
+                corrected_snippet = None
+                auto_fixable = False
+                fix_source = None
+            else:
+                # Read full source code for code findings
+                full_file_path = os.path.join(project_dir, finding.file_path)
+                full_file_content = ""
+                if os.path.exists(full_file_path):
+                    try:
+                        with open(full_file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            full_file_content = f.read()
+                    except Exception as file_err:
+                        logger.warning(f"Could not read {full_file_path} content: {file_err}")
+                
+                # Generate AI explanation and fix
+                explanation = generate_vulnerability_explanation(finding)
+                _, corrected_snippet, _, auto_fixable, fix_source = generate_patched_code(finding, full_file_content)
             
             # Count severity
             sev = finding.severity.lower()
@@ -97,7 +125,7 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
                 line_number=finding.line_number,
                 severity=finding.severity,
                 description=finding.description,
-                recommendation=explanation,  # Holds the rich AI Markdown explanation
+                recommendation=explanation,
                 code_snippet=finding.code_snippet,
                 suggested_fix=corrected_snippet,
                 cwe_id=finding.cwe_id,
@@ -110,12 +138,14 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
             )
             db.add(db_vuln)
             
-        # 4. Finalize scan metadata
-        scan.total_issues = len(findings)
+        # 5. Finalize scan metadata
+        scan.total_issues = len(all_findings)
         scan.critical_count = critical_count
         scan.high_count = high_count
         scan.medium_count = medium_count
         scan.low_count = low_count
+        scan.warnings = json.dumps(all_warnings) if all_warnings else None
+        scan.dependency_summary = json.dumps(dep_summary) if dep_summary else None
         scan.status = "completed"
         
         # Update parent project date
@@ -124,7 +154,7 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
             project.scan_date = datetime.utcnow()
             
         db.commit()
-        logger.info(f"Scan {scan_history_id} completed successfully. Issues: {len(findings)}")
+        logger.info(f"Scan {scan_history_id} completed successfully. Issues: {len(all_findings)}, Warnings: {len(all_warnings)}")
         
     except Exception as e:
         logger.error(f"Critical error during scan {scan_history_id}: {e}")

@@ -16,7 +16,73 @@ from backend.detectors.schema import Finding
 _BANDIT_LINE_PREFIX = re.compile(r'^\d+ ')
 
 
-logger = logging.getLogger(__name__)
+BANDIT_FALLBACK_CWE_MAP = {
+    # Test IDs
+    "B101": "CWE-703",
+    "B102": "CWE-95",
+    "B103": "CWE-732",
+    "B104": "CWE-605",
+    "B105": "CWE-259",
+    "B106": "CWE-259",
+    "B107": "CWE-259",
+    "B108": "CWE-377",
+    "B110": "CWE-703",
+    "B112": "CWE-703",
+    "B201": "CWE-215",
+    "B301": "CWE-502",
+    "B302": "CWE-502",
+    "B303": "CWE-327",
+    "B304": "CWE-327",
+    "B305": "CWE-327",
+    "B306": "CWE-377",
+    "B307": "CWE-95",
+    "B308": "CWE-79",
+    "B320": "CWE-611",
+    "B324": "CWE-327",
+    "B403": "CWE-502",
+    "B404": "CWE-78",
+    "B413": "CWE-327",
+    "B501": "CWE-295",
+    "B506": "CWE-502",
+    "B601": "CWE-78",
+    "B602": "CWE-78",
+    "B603": "CWE-78",
+    "B604": "CWE-78",
+    "B605": "CWE-78",
+    "B606": "CWE-78",
+    "B607": "CWE-78",
+    "B608": "CWE-89",
+    "B609": "CWE-78",
+    "B610": "CWE-89",
+    "B611": "CWE-89",
+    "B701": "CWE-79",
+    "B702": "CWE-79",
+    "B703": "CWE-79",
+    # Test names as fallback
+    "hardcoded_password_string": "CWE-259",
+    "hardcoded_sql_expressions": "CWE-89",
+    "subprocess_popen_with_shell_equals_true": "CWE-78",
+    "blacklist": "CWE-502",
+    "hashlib": "CWE-327",
+    "eval": "CWE-95",
+}
+
+
+def _extract_bandit_cwe(issue: dict) -> str | None:
+    # 1. Primary: Bandit JSON issue_cwe object
+    issue_cwe = issue.get("issue_cwe")
+    if isinstance(issue_cwe, dict) and issue_cwe.get("id"):
+        return f"CWE-{issue_cwe.get('id')}"
+
+    # 2. Fallback: check test_id or test_name in fallback map
+    test_id = issue.get("test_id", "")
+    test_name = issue.get("test_name", "")
+    fallback = BANDIT_FALLBACK_CWE_MAP.get(test_id) or BANDIT_FALLBACK_CWE_MAP.get(test_name)
+    if fallback:
+        return fallback
+
+    return None
+
 
 
 def _strip_bandit_line_numbers(code: str) -> str:
@@ -98,10 +164,13 @@ class BanditDetector:
                     confidence = 0.4
                 
                 # Map CWE ID if present
-                cwe_ref = issue.get("cwe", {})
-                cwe_id = None
-                if cwe_ref and cwe_ref.get("id"):
-                    cwe_id = f"CWE-{cwe_ref.get('id')}"
+                cwe_id = _extract_bandit_cwe(issue)
+
+                test_id = issue.get("test_id", "")
+                test_name = issue.get("test_name", "")
+                rule_id = test_id or test_name
+                from backend.detectors.issue_classes import get_issue_class
+                issue_class = get_issue_class(test_id) or get_issue_class(test_name)
 
                 finding = Finding(
                     file_path=rel_path,
@@ -113,7 +182,9 @@ class BanditDetector:
                     code_snippet=code,
                     cwe_id=cwe_id,
                     confidence=confidence,
-                    source_tool="bandit"
+                    source_tool="bandit",
+                    rule_id=rule_id,
+                    issue_class=issue_class
                 )
                 findings.append(finding)
                 

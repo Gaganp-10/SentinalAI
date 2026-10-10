@@ -127,7 +127,15 @@ class ApplyFixResponse(BaseModel):
 
 
 
+import json
+
 # --- Scan History Schemas ---
+class DependencySummary(BaseModel):
+    checked: int = 0
+    not_checked: int = 0
+    manifests: int = 0
+
+
 class ScanHistoryOut(BaseModel):
     id: UUID
     project_id: UUID
@@ -138,9 +146,41 @@ class ScanHistoryOut(BaseModel):
     medium_count: int
     low_count: int
     status: str
+    warnings: Optional[List[str]] = None
+    dependency_summary: Optional[DependencySummary] = None
 
     class Config:
         from_attributes = True
+
+    @field_validator("warnings", mode="before")
+    @classmethod
+    def parse_warnings(cls, v: Any) -> Optional[List[str]]:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                return [v] if v else []
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        return None
+
+    @field_validator("dependency_summary", mode="before")
+    @classmethod
+    def parse_dependency_summary(cls, v: Any) -> Optional[Any]:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                return None
+        return v
 
 # --- AI Mentor Schemas ---
 class MentorQuestion(BaseModel):

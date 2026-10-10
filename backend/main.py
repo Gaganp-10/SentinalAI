@@ -6,7 +6,7 @@ from backend.utils.config import settings
 from backend.database.session import engine, Base
 
 # Import all routers to mount them
-from backend.api import auth, projects, files, scans, vulnerabilities, reports, ai
+from backend.api import auth, projects, files, scans, vulnerabilities, reports, ai, owasp
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -16,18 +16,8 @@ logger = logging.getLogger(__name__)
 try:
     logger.info("Initializing database tables...")
     Base.metadata.create_all(bind=engine)
-    # Ensure auto_fixable column exists in SQLite if table pre-existed
-    with engine.connect() as conn:
-        from sqlalchemy import inspect, text
-        inspector = inspect(engine)
-        if "vulnerabilities" in inspector.get_table_names():
-            columns = [col['name'] for col in inspector.get_columns('vulnerabilities')]
-            if 'auto_fixable' not in columns:
-                conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN auto_fixable BOOLEAN DEFAULT 1"))
-                conn.commit()
-            if 'fix_source' not in columns:
-                conn.execute(text("ALTER TABLE vulnerabilities ADD COLUMN fix_source VARCHAR"))
-                conn.commit()
+    from backend.database.migration import run_db_migrations
+    run_db_migrations(engine)
     logger.info("Database tables initialized successfully.")
 except Exception as e:
     logger.error(f"Failed to initialize database tables: {e}")
@@ -49,7 +39,7 @@ app.add_middleware(
 )
 
 # Register routers under /api namespace for proxy isolation and prevention of SPA route collisions
-all_routers = [auth.router, projects.router, files.router, scans.router, vulnerabilities.router, reports.router, ai.router]
+all_routers = [auth.router, projects.router, files.router, scans.router, vulnerabilities.router, reports.router, ai.router, owasp.router]
 
 for r in all_routers:
     app.include_router(r, prefix="/api")

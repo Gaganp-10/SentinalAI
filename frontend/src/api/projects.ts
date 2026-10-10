@@ -7,6 +7,12 @@ export type Project = {
   scan_date?: string | null;
 };
 
+export type DependencySummary = {
+  checked: number;
+  not_checked: number;
+  manifests: number;
+};
+
 export type ScanHistory = {
   id: string;
   project_id: string;
@@ -17,6 +23,8 @@ export type ScanHistory = {
   medium_count: number;
   low_count: number;
   status: string;
+  warnings?: string[] | null;
+  dependency_summary?: DependencySummary | null;
 };
 
 export async function listProjects(): Promise<Project[]> {

@@ -9,7 +9,7 @@ from backend.ai.provider import get_ai_provider, FallbackTemplateProvider
 logger = logging.getLogger(__name__)
 
 
-def generate_template_fix(finding: Finding) -> Tuple[str, bool]:
+def generate_template_fix(finding: Finding, file_content: Optional[str] = None) -> Tuple[str, bool]:
     """
     Generates a deterministic mechanical code fix for common vulnerability types
     when running in local template-fallback mode (no AI key).
@@ -34,6 +34,19 @@ def generate_template_fix(finding: Finding) -> Tuple[str, bool]:
 
     # Rule 1: hardcoded_sql_expressions / SQL Injection
     if "hardcoded_sql_expressions" in type_lower or "sql_injection" in type_lower or "sql injection" in type_lower or "sql" in type_lower:
+        from backend.fixer.fix_runtime import detect_sql_placeholder
+        placeholder, driver_name = detect_sql_placeholder(file_content or snippet)
+        if not placeholder:
+            if file_content is None:
+                placeholder = "%s"
+            else:
+                finding.recommendation = (
+                    "Automatic fix not applied: SQL parameter placeholder style depends on the database driver in use "
+                    "(e.g. '?' for sqlite3, '%s' for psycopg2/PyMySQL). "
+                    "Because no supported database driver import was detected, please parameterize this query manually."
+                )
+                return snippet, False
+
         fixed_lines = []
         i = 0
         transformed = False
@@ -61,17 +74,17 @@ def generate_template_fix(finding: Finding) -> Tuple[str, bool]:
                 suffix = (concat_match.group(5) or "").lstrip("'\"")
                 match_tuple = (prefix, var_name, suffix)
             elif mod_match:
-                sql_str = mod_match.group(2).replace("'%s'", "%s").replace('"%s"', "%s")
+                sql_str = mod_match.group(2).replace("'%s'", placeholder).replace('"%s"', placeholder).replace("%s", placeholder)
                 var_name = mod_match.group(3)
                 match_tuple = (sql_str, var_name, "")
             elif fmt_match:
-                sql_str = fmt_match.group(2).replace("'{}'", "%s").replace('"{}"', "%s").replace("{}", "%s")
+                sql_str = fmt_match.group(2).replace("'{}'", placeholder).replace('"{}"', placeholder).replace("{}", placeholder)
                 var_name = fmt_match.group(3)
                 match_tuple = (sql_str, var_name, "")
 
             if match_tuple:
                 prefix, var_name, suffix = match_tuple
-                sql_pattern = f"{prefix}%s{suffix}"
+                sql_pattern = f"{prefix}{placeholder}{suffix}"
                 
                 # Check if this line is an assignment e.g. query = "SELECT..."
                 assign_match = re.search(r'^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=', line)
@@ -334,9 +347,18 @@ def generate_patched_code(finding: Finding, full_file_content: str) -> Tuple[str
         fix_source (Optional[str]): "template" | "ai" | None.
     """
     # 1. First priority: Deterministic mechanical template fix
-    corrected_snippet, template_auto_fixable = generate_template_fix(finding)
+    corrected_snippet, template_auto_fixable = generate_template_fix(finding, full_file_content)
     if template_auto_fixable and finding.code_snippet and finding.code_snippet in full_file_content:
         corrected_file = full_file_content.replace(finding.code_snippet, corrected_snippet, 1)
+        # Ensure required imports are added if missing (e.g. import os for os.environ)
+        from backend.fixer.fix_runtime import add_import_if_missing
+        if "os.environ" in corrected_snippet or "os.getenv" in corrected_snippet:
+            corrected_file = add_import_if_missing(corrected_file, "os", "import os")
+        elif "hashlib." in corrected_snippet:
+            corrected_file = add_import_if_missing(corrected_file, "hashlib", "import hashlib")
+        elif "subprocess." in corrected_snippet:
+            corrected_file = add_import_if_missing(corrected_file, "subprocess", "import subprocess")
+
         orig_lines = full_file_content.splitlines(keepends=True)
         fixed_lines = corrected_file.splitlines(keepends=True)
         diff_list = list(difflib.unified_diff(
@@ -347,6 +369,11 @@ def generate_patched_code(finding: Finding, full_file_content: str) -> Tuple[str
         ))
         diff = "".join(diff_list)
         return corrected_file, corrected_snippet, diff, True, "template"
+
+    type_lower = (finding.type or "").lower()
+    # If this is an SQL injection finding whose driver could not be determined, do not auto-apply
+    if "sql" in type_lower and not template_auto_fixable:
+        return full_file_content, corrected_snippet or finding.code_snippet or "", "", False, None
 
     provider = get_ai_provider()
 

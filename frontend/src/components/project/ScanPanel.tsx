@@ -86,12 +86,41 @@ export function ScanPanel({
           className="glass-field mt-6 rounded-[22px] p-5"
         >
           <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="size-[18px] text-foreground" />
+            {scan.warnings && scan.warnings.length > 0 ? (
+              <ShieldAlert className="size-[18px] text-amber-400" />
+            ) : (
+              <CheckCircle2 className="size-[18px] text-foreground" />
+            )}
             <p className="text-[14.5px] font-medium text-foreground">
-              Scan complete — {scan.total_issues}{" "}
-              {scan.total_issues === 1 ? "issue" : "issues"} found
+              {scan.warnings && scan.warnings.length > 0
+                ? `Scan completed with warnings — ${scan.total_issues} ${scan.total_issues === 1 ? "issue" : "issues"} found`
+                : `Scan complete — ${scan.total_issues} ${scan.total_issues === 1 ? "issue" : "issues"} found`}
             </p>
           </div>
+
+          {scan.warnings && scan.warnings.length > 0 && (
+            <div className="mt-4 rounded-[16px] border border-amber-500/30 bg-amber-500/10 p-3.5 text-[13px]">
+              <p className="font-semibold text-amber-300">
+                Scan Warnings ({scan.warnings.length})
+              </p>
+              <ul className="mt-1.5 list-disc space-y-1 pl-5 text-[12.5px] text-amber-200/90">
+                {scan.warnings.map((w, idx) => (
+                  <li key={idx}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {scan.dependency_summary && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+              <span className="font-medium text-foreground">Dependencies:</span>
+              <span>{scan.dependency_summary.checked} checked</span>
+              {scan.dependency_summary.not_checked > 0 && (
+                <span className="text-amber-400">· {scan.dependency_summary.not_checked} not checked</span>
+              )}
+              <span>· across {scan.dependency_summary.manifests} {scan.dependency_summary.manifests === 1 ? "manifest" : "manifests"}</span>
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {SEVERITIES.map((s) => (

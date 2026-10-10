@@ -307,11 +307,19 @@ def apply_vulnerability_fix(
 
     new_content = file_content.replace(vuln.code_snippet, fix_to_apply, 1)
 
-    # --- Bug B Fix: AST pre-write syntax validation (Python files only) ---
-    # Parse the resulting file content with Python's ast.parse() BEFORE writing
-    # to disk.  If the fix would produce invalid Python syntax we block the
-    # write entirely rather than corrupting the source file.
+    # --- Pre-write validation and import injection (Python files only) ---
     if full_file_path.endswith(".py"):
+        from backend.fixer.fix_runtime import add_import_if_missing, get_new_undefined_names
+
+        # 1. Missing import injection: if fix introduces new module usage, ensure imported
+        if "os.environ" in fix_to_apply or "os.getenv" in fix_to_apply:
+            new_content = add_import_if_missing(new_content, "os", "import os")
+        elif "hashlib." in fix_to_apply:
+            new_content = add_import_if_missing(new_content, "hashlib", "import hashlib")
+        elif "subprocess." in fix_to_apply:
+            new_content = add_import_if_missing(new_content, "subprocess", "import subprocess")
+
+        # 2. Syntax validation via ast.parse
         try:
             ast.parse(new_content, filename=full_file_path)
         except SyntaxError as syntax_err:
@@ -322,6 +330,18 @@ def apply_vulnerability_fix(
                     "This fix has been blocked to prevent corrupting your file. "
                     "Please try regenerating the fix or edit manually. "
                     f"(SyntaxError at line {syntax_err.lineno}: {syntax_err.msg})"
+                )
+            )
+
+        # 3. Undefined-name check via pyflakes: block write if new undefined name introduced
+        new_undefined = get_new_undefined_names(file_content, new_content)
+        if new_undefined:
+            names_str = ", ".join(sorted(new_undefined))
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"The generated fix introduced undefined name(s): {names_str}. "
+                    "This fix has been blocked to prevent runtime errors."
                 )
             )
 

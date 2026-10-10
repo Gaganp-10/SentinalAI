@@ -462,6 +462,32 @@ pre.fix-box {
 """
 
     # ── Summary Block (page 1) ────────────────────────────────────────────────
+    raw_warnings = getattr(scan, "warnings", None)
+    parsed_warnings = []
+    if raw_warnings:
+        if isinstance(raw_warnings, str):
+            try:
+                import json
+                parsed_warnings = json.loads(raw_warnings)
+            except Exception:
+                parsed_warnings = [raw_warnings]
+        elif isinstance(raw_warnings, list):
+            parsed_warnings = raw_warnings
+
+    has_warnings = bool(parsed_warnings)
+    status_label = "Completed with Warnings" if has_warnings else "Completed"
+    status_color = "#ca8a04" if has_warnings else "#16a34a"
+
+    warnings_html = ""
+    if parsed_warnings:
+        warn_items = "".join(f'<div style="padding-left:8px; margin-bottom:2px;">&bull;&nbsp;{html_mod.escape(str(w))}</div>' for w in parsed_warnings)
+        warnings_html = f"""
+<div style="background-color:#fffbeb; border:1px solid #fef08a; border-radius:3px; padding:6px 10px; margin-bottom:12px; font-size:8pt; color:#92400e;">
+  <div style="font-weight:bold; margin-bottom:3px;">Scan Warnings:</div>
+  {warn_items}
+</div>
+"""
+
     summary_meta = f"""
 <h2>Project Summary</h2>
 <table class="meta-table">
@@ -475,7 +501,7 @@ pre.fix-box {
   </tr>
   <tr>
     <td class="lbl">Scan Status</td>
-    <td><span style="color:#16a34a; font-weight:bold;">Completed</span></td>
+    <td><span style="color:{status_color}; font-weight:bold;">{status_label}</span></td>
     <td class="lbl">Report Date</td><td>{html_mod.escape(gen_time)}</td>
   </tr>
 </table>
@@ -646,6 +672,7 @@ pre.fix-box {
 {header_html}
 {footer_html}
 {summary_meta}
+{warnings_html}
 {score_and_breakdown}
 {findings_html}
 </body>

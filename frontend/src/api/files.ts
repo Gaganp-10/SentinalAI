@@ -22,6 +22,9 @@ export const ACCEPTED_EXTENSIONS = [
   ".h",
   ".php",
   ".zip",
+  ".txt",
+  ".json",
+  ".xml",
 ] as const;
 
 export async function listFiles(projectId: string): Promise<ProjectFile[]> {

@@ -69,9 +69,10 @@ class ASTVisitor(ast.NodeVisitor):
                             recommendation="Move sensitive credentials to environment variables or a secrets manager.",
                             code_snippet=self._get_snippet(node.lineno),
                             cwe_id="CWE-798",
-                            owasp_category="A02:2021-Cryptographic Failures",
                             confidence=0.8,
-                            source_tool="ast"
+                            source_tool="ast",
+                            rule_id="ast-hardcoded-secret",
+                            issue_class="HARDCODED_CREDENTIAL"
                         ))
         self.generic_visit(node)
 
@@ -100,9 +101,10 @@ class ASTVisitor(ast.NodeVisitor):
                 recommendation="Replace weak hashing algorithms (MD5/SHA-1) with secure alternatives such as SHA-256 or bcrypt.",
                 code_snippet=self._get_snippet(node.lineno),
                 cwe_id="CWE-328",
-                owasp_category="A02:2021-Cryptographic Failures",
                 confidence=0.9,
-                source_tool="ast"
+                source_tool="ast",
+                rule_id="ast-weak-hash-md5",
+                issue_class="WEAK_HASH"
             ))
 
         # Check for dangerous eval or exec usage
@@ -122,9 +124,10 @@ class ASTVisitor(ast.NodeVisitor):
                 recommendation=f"Avoid using '{eval_func}' with dynamic inputs, as it executes arbitrary code. Refactor logic to avoid dynamic interpretation.",
                 code_snippet=self._get_snippet(node.lineno),
                 cwe_id="CWE-95",
-                owasp_category="A03:2021-Injection",
                 confidence=0.9,
-                source_tool="ast"
+                source_tool="ast",
+                rule_id="ast-eval",
+                issue_class="CODE_INJECTION"
             ))
 
         # Check for dynamic SQL statements passed to database cursor execution calls
@@ -190,9 +193,10 @@ class ASTVisitor(ast.NodeVisitor):
                         recommendation="Use parameterized queries / prepared statements instead of dynamic string building (e.g. cursor.execute('SELECT * FROM users WHERE name = %s', (name,))).",
                         code_snippet=self._get_snippet(node.lineno),
                         cwe_id="CWE-89",
-                        owasp_category="A03:2021-Injection",
                         confidence=0.8,
-                        source_tool="ast"
+                        source_tool="ast",
+                        rule_id="ast-sql-injection",
+                        issue_class="SQL_INJECTION"
                     ))
                     
         self.generic_visit(node)

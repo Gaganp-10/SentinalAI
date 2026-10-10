@@ -16,6 +16,7 @@ import { SeverityBreakdownChart } from "../components/project/SeverityBreakdownC
 import { ScanTimeline } from "../components/project/ScanTimeline";
 import { CodebaseVulnerabilityMap } from "../components/project/CodebaseVulnerabilityMap";
 import { SecurityCopilot } from "../components/project/SecurityCopilot";
+import { OwaspCoveragePanel } from "../components/project/OwaspCoveragePanel";
 import { getCurrentUser } from "../api/auth";
 import { clearToken, toApiErrorMessage } from "../api/client";
 import { getProject, latestScan, listScans, type ScanHistory } from "../api/projects";
@@ -239,6 +240,8 @@ function ProjectDetailPage() {
             scans={scans.data ?? []}
             loading={scans.isLoading}
           />
+
+          <OwaspCoveragePanel projectId={projectId} />
 
           <ScanHistoryList
             scans={scans.data ?? []}
