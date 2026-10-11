@@ -198,7 +198,60 @@ GET    /reports/{id}?format=pdf|html|json|csv
 └── uploads/              # scanned files (gitignored)
 ```
 
-## Known Limitations / Roadmap
+## Recommended-Version Rule (SCA)
+
+The canonical rule — implemented in `backend/sca/findings.py::compute_minimum_covering_version`,
+stated in every finding's explanation text, and tested in `backend/tests/test_step7.py`:
+
+> **For each advisory:** collect all fixed versions listed.  
+> Discard any that are **≤ the installed version** (they pre-date the installed release).  
+> Take the **smallest** of the remaining versions as that advisory's minimum covering version.  
+> If any advisory has no remaining fixed version, return `None` (no safe recommendation).  
+> Otherwise the overall recommendation is the **maximum** (highest) of all per-advisory minimums,  
+> because upgrading to that one version satisfies every advisory simultaneously.
+
+### Worked example — Django `2.2.0` (installed)
+
+| Advisory | Severity | Fixed versions in OSV | Fixes ≤ 2.2.0 ignored | Per-advisory min > 2.2.0 |
+|---|---|---|---|---|
+| GHSA-2gwj-7jmv-h26r | CRITICAL | 2.2.28, 3.2.13, 4.0.4 | — | **2.2.28** |
+| GHSA-2m34-jcjv-45xf | MODERATE | 2.2.13, 3.0.7 | — | **2.2.13** |
+| GHSA-3gh2-xw74-jmcw | HIGH | 1.11.29, 2.2.11, 3.0.4 | 1.11.29 | **2.2.11** |
+| GHSA-3h9f-r86x-qvjx | LOW | 5.2.16, 6.0.7 | — | **5.2.16** |
+| GHSA-53qw-q765-4fww | HIGH | 2.2.26, 3.2.11, 4.0.1 | — | **2.2.26** |
+| GHSA-68w8-qjq3-2gfm | MODERATE | 2.2.24, 3.1.12, 3.2.4 | — | **2.2.24** |
+| GHSA-6c3j-c64m-qhgq | MODERATE | 2.1.9, 2.2.2 | 2.1.9 | **2.2.2** |
+| GHSA-6c7v-2f49-8h26 | MODERATE | 2.1.10, 2.2.3, 1.11.22 | 2.1.10, 1.11.22 | **2.2.3** |
+| GHSA-6cw3-g6wv-c2xv | HIGH | 2.2.27, 3.2.12, 4.0.2 | — | **2.2.27** |
+| GHSA-6r97-cj55-9hrq | CRITICAL | 1.11.23, 2.1.11, 2.2.4 | 1.11.23, 2.1.11 | **2.2.4** |
+| GHSA-6w2r-r2m5-xq5w | HIGH | 4.2.24, 5.1.12, 5.2.6 | — | **4.2.24** |
+| GHSA-7rp2-fm2h-wchj | MODERATE | 1.11.21, 2.1.9, 2.2.2 | 1.11.21, 2.1.9 | **2.2.2** |
+| *(63 more)* | | | | |
+
+**Overall recommendation = max of per-advisory minimums = `5.2.16`**  
+(driven by GHSA-3h9f-r86x-qvjx which only has fixes on the 5.x/6.x branch)
+
+> Django 2.2.0 has **75** total advisories from OSV. Every advisory in the
+> sample above has at least one fix strictly greater than 2.2.0, so a
+> covering version *can* be computed. The result is `5.2.16` because that
+> advisory only provides fixes on the 5.x and 6.x branches.
+
+### Express 4.17.1 — severity source
+
+Express 4.17.1 has **2 OSV advisories**:
+
+| Advisory | `database_specific.severity` from OSV | Summary |
+|---|---|---|
+| GHSA-qw6h-vgh9-j6wx | `LOW` (source-provided) | XSS via response.redirect() |
+| GHSA-rv95-896h-c2vc | `MODERATE` (source-provided) | Open Redirect in malformed URLs |
+
+The `medium` severity shown in SentinelAI for Express 4.17.1 is **not a
+default** — it comes directly from `database_specific.severity = "MODERATE"`
+in GHSA-rv95-896h-c2vc, which normalizes to `medium` via `normalize_severity()`.
+`npm audit` may report these differently because it uses the npm advisory
+database (npmjs.com/advisories), not the OSV database; severity labels can
+differ between registries for the same vulnerability.
+
 
 ### General
 - Automatic fixing currently covers a fixed set of well-understood
@@ -243,4 +296,5 @@ and newly introduced undefined names (`pyflakes`). These guarantees, along with
 driver-specific SQL parameterization, atomic import injection (`os`, `hashlib`, `subprocess`),
 and rollback safeguards, are comprehensively covered by automated unit and
 integration tests (`backend/tests/test_runtime_fix_correctness.py`,
-`backend/tests/test_step6.py`, and `backend/tests/test_issue_classes_dedup.py`).
+`backend/tests/test_step6.py`, `backend/tests/test_issue_classes_dedup.py`,
+and `backend/tests/test_step7.py` for SCA/dependency scanning).

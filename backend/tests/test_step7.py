@@ -461,6 +461,104 @@ class TestVersionComparison:
         from backend.sca.findings import compute_minimum_covering_version
         assert compute_minimum_covering_version("PyPI", []) is None
 
+    # ── Three explicit tests requested in follow-up review ──────────────────
+
+    def test_log4j_2_3x_and_2_12x_branch_fixes_are_ignored(self):
+        """
+        Rule clause 1: fixes BELOW the installed version are discarded.
+
+        GHSA-jfh8-c2jp-hdp8 (Log4Shell) reports fixes on three branches:
+          2.3.1  — below installed 2.14.1  → IGNORED
+          2.12.2 — below installed 2.14.1  → IGNORED
+          2.17.0 — above installed 2.14.1  → kept; per-advisory minimum = 2.17.0
+
+        The real OSV record lists exactly these versions.
+        """
+        from backend.sca.findings import compute_minimum_covering_version
+        # Mirrors the real GHSA-jfh8-c2jp-hdp8 fixed events for log4j-core.
+        res = compute_minimum_covering_version(
+            "Maven",
+            [["2.3.1", "2.12.2", "2.17.0"]],
+            installed_version="2.14.1"
+        )
+        assert res == "2.17.0", (
+            "2.3.1 and 2.12.2 are <= installed 2.14.1 and must be ignored; "
+            "smallest fix > 2.14.1 is 2.17.0"
+        )
+
+    def test_maximum_of_per_advisory_minimums_is_chosen_log4j(self):
+        """
+        Rule clause 2: recommendation = max over per-advisory minimums.
+
+        Two advisories for log4j-core 2.14.1:
+          Advisory A fixes: [2.3.1, 2.12.2, 2.17.0]
+            → fixes below 2.14.1 ignored; per-advisory min = 2.17.0
+          Advisory B fixes: [2.3.2, 2.12.4, 2.17.1]
+            → fixes below 2.14.1 ignored; per-advisory min = 2.17.1
+          Overall recommendation = max(2.17.0, 2.17.1) = 2.17.1
+        """
+        from backend.sca.findings import compute_minimum_covering_version
+        res = compute_minimum_covering_version(
+            "Maven",
+            [
+                ["2.3.1", "2.12.2", "2.17.0"],   # advisory A per-min = 2.17.0
+                ["2.3.2", "2.12.4", "2.17.1"],   # advisory B per-min = 2.17.1
+            ],
+            installed_version="2.14.1"
+        )
+        assert res == "2.17.1", (
+            "max of per-advisory minimums: max(2.17.0, 2.17.1) = 2.17.1"
+        )
+
+    def test_advisory_with_only_sub_installed_fixes_produces_none_and_note(self):
+        """
+        Rule clause 3: if ANY advisory has no fix > installed, result is None,
+        and the explanation text must contain an explicit 'No fixed version
+        available' note (not a silent omission).
+
+        log4j-core 2.14.1 with an advisory that only lists branch fixes
+        2.3.1 and 2.12.2 (both below installed 2.14.1) → None.
+        The Finding's recommendation must surface the note.
+        """
+        from backend.sca.findings import compute_minimum_covering_version, build_dependency_finding
+        from backend.sca.parsers import ParsedDependency
+
+        # compute_minimum_covering_version must return None
+        res = compute_minimum_covering_version(
+            "Maven",
+            [["2.3.1", "2.12.2"]],   # all below 2.14.1
+            installed_version="2.14.1"
+        )
+        assert res is None
+
+        # build_dependency_finding must surface the note
+        dep = ParsedDependency(
+            ecosystem="Maven", name="log4j-core", version="2.14.1",
+            manifest_file="pom.xml", line=1, direct=True, dev=False
+        )
+        adv = {
+            "id": "GHSA-sub-installed",
+            "aliases": [],
+            "summary": "Affects 2.14.1; only branch fixes below installed exist",
+            "database_specific": {"severity": "CRITICAL", "cwe_ids": []},
+            "affected": [{
+                "package": {"name": "log4j-core", "ecosystem": "Maven"},
+                "ranges": [{
+                    "events": [
+                        {"introduced": "0"},
+                        {"fixed": "2.3.1"},
+                        {"fixed": "2.12.2"},
+                    ]
+                }]
+            }]
+        }
+        f = build_dependency_finding(dep, ["GHSA-sub-installed"], {"GHSA-sub-installed": adv})
+        assert f.suggested_fix is None, "No upgrade suggestion when no fix > installed"
+        assert "No fixed version available" in (f.recommendation or ""), (
+            "Explanation must explicitly say 'No fixed version available', "
+            "not silently omit the note"
+        )
+
 
 # ============================================================
 # 5. scan_dependencies integration

@@ -137,17 +137,44 @@ def is_strictly_greater(ecosystem: str, ver: str, base_ver: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# RECOMMENDED-VERSION RULE (canonical definition — also stated in README and
+# in every finding's explanation text):
+#
+#   For each advisory:
+#     • Collect all fixed versions listed in the advisory.
+#     • Discard any that are <= the installed version (they do not help).
+#     • Take the SMALLEST of the remaining versions as this advisory's
+#       minimum covering version.
+#   If any advisory has no remaining fixed version (all fixes are below or
+#   equal to the installed version, or none were listed), the function
+#   returns None — no single safe recommendation can be made.
+#   Otherwise the overall recommendation is the MAXIMUM (highest) across
+#   all per-advisory minimums, because upgrading to that one version satisfies
+#   every advisory simultaneously.
+# ---------------------------------------------------------------------------
 def compute_minimum_covering_version(
     ecosystem: str,
     fixed_versions_by_advisory: List[List[str]],
     installed_version: Optional[str] = None
 ) -> Optional[str]:
     """
-    Computes the recommended covering version according to the rule:
-    1. For each advisory, take the smallest fixed version strictly greater than the installed version.
-       Fixed versions lower than or equal to the installed version are ignored.
-    2. The overall recommendation is the maximum (highest) of those per-advisory minimums across all advisories.
-    3. If any advisory has no fixed version strictly greater than the installed version, returns None.
+    Recommended-version rule
+    ========================
+    For each advisory, take the smallest fixed version strictly greater than
+    the installed version.  Fixed versions lower than or equal to the installed
+    version are ignored (they pre-date the installed release and offer no
+    protection).  The overall recommendation is the highest of those per-advisory
+    minimums, because that single version satisfies every advisory at once.
+    Returns None if any advisory supplies no applicable fixed version.
+
+    Args:
+        ecosystem:                  "PyPI", "npm", or "Maven".
+        fixed_versions_by_advisory: One list of fixed-version strings per advisory.
+        installed_version:          The exact version currently installed.
+
+    Returns:
+        The recommended upgrade target, or None if indeterminate.
     """
     if not fixed_versions_by_advisory:
         return None
@@ -336,11 +363,17 @@ def build_dependency_finding(
     lines.append(f"#### Known Vulnerabilities ({total_advisories} advisories)")
     for item in shown_advisories:
         alias_str = f" ({item['cve']})" if item['cve'] else ""
+        # Per-advisory: show fix versions only when at least one is > installed.
+        # Rule: smallest fix > installed is the per-advisory minimum; fixes
+        # <= installed are shown for completeness but marked accordingly.
         has_applicable_fix = any(is_strictly_greater(dep.ecosystem, fv, dep.version) for fv in item['fixed'])
         if item['fixed'] and has_applicable_fix:
             fix_str = f" — Fixed in: `{', '.join(item['fixed'])}`"
+        elif item['fixed']:
+            # Fixes exist but all are <= installed version
+            fix_str = f" — No fixed version available (all reported fixes ≤ installed `{dep.version}`)"
         else:
-            fix_str = " — No fixed version available"
+            fix_str = " — No fixed version available for this advisory"
         lines.append(f"- **[{item['id']}]({item['url']}){alias_str}** [{item['severity']}]: {item['summary']}{fix_str}")
     if hidden_count > 0:
         lines.append(f"- *…and {hidden_count} more — [view all on osv.dev]({osv_search_url})*")
