@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Download,
   Loader2,
+  Package,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -56,6 +57,12 @@ export const Route = createFileRoute("/projects/$projectId/vulnerabilities_/$vul
 
 function isUnauthorized(error: unknown) {
   return axios.isAxiosError(error) && error.response?.status === 401;
+}
+
+function extractRecommendedVersion(suggestedFix?: string | null): string | null {
+  if (!suggestedFix) return null;
+  const m = suggestedFix.match(/>=(.*)/);
+  return m && m[1] ? m[1].trim() : null;
 }
 
 function Tag({ children, tone = "" }: { children: React.ReactNode; tone?: string }) {
@@ -237,6 +244,9 @@ function VulnerabilityDetailPage() {
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Tag tone={severityTone(data.severity)}>{data.severity}</Tag>
                 <Tag>{data.source_tool}</Tag>
+                {data.type === "vulnerable_dependency" && (
+                  <Tag tone="text-teal-400">Dependency</Tag>
+                )}
                 {data.cwe_id && <Tag>{data.cwe_id}</Tag>}
                 {data.owasp_category && <Tag>{data.owasp_category}</Tag>}
                 <Tag>{Math.round((data.confidence ?? 0) * 100)}% confidence</Tag>
@@ -256,8 +266,9 @@ function VulnerabilityDetailPage() {
                 )}
               </div>
               <p className="mt-3 font-mono text-[13px] text-muted-foreground">
-                {data.file?.filepath ?? data.file?.filename ?? `file ${data.file_id}`} · line{" "}
-                {data.line_number}
+                {data.type === "vulnerable_dependency"
+                  ? (data.file?.filepath ?? data.file?.filename ?? `file ${data.file_id}`)
+                  : `${data.file?.filepath ?? data.file?.filename ?? `file ${data.file_id}`} · line ${data.line_number}`}
               </p>
             </>
           )}
@@ -338,18 +349,26 @@ function VulnerabilityDetailPage() {
 
               <section className="glass-card rounded-[32px] p-6 sm:p-7">
                 <h2 className="text-[16px] font-semibold tracking-[-0.02em] text-foreground">
-                  Explanation
+                  {data.type === "vulnerable_dependency" ? "Vulnerability Details" : "Explanation"}
                 </h2>
                 <div className="mt-5 space-y-5">
-                  {Array.from(
-                    new Set(
-                      [data.description, data.explanation, data.recommendation]
-                        .filter((t): t is string => Boolean(t?.trim()))
-                        .map((t) => t.trim()),
-                    ),
-                  ).map((text) => (
-                    <Markdown key={text.slice(0, 40)} text={text} />
-                  ))}
+                  {data.type === "vulnerable_dependency" ? (
+                    /* Render full markdown for dependency findings (has advisory links) */
+                    <>
+                      <p className="text-[13.5px] leading-[1.65] text-foreground/85">{data.description}</p>
+                      {data.recommendation && <Markdown text={data.recommendation} />}
+                    </>
+                  ) : (
+                    Array.from(
+                      new Set(
+                        [data.description, data.explanation, data.recommendation]
+                          .filter((t): t is string => Boolean(t?.trim()))
+                          .map((t) => t.trim()),
+                      ),
+                    ).map((text) => (
+                      <Markdown key={text.slice(0, 40)} text={text} />
+                    ))
+                  )}
                 </div>
               </section>
             </div>
@@ -379,43 +398,58 @@ function VulnerabilityDetailPage() {
               )}
 
               <div className="mt-5 flex flex-wrap gap-3">
-                {autoFixable && (
+                {data.type === "vulnerable_dependency" ? (
+                  /* Dependency: disabled manual update action */
                   <button
                     type="button"
-                    onClick={() => apply.mutate()}
-                    disabled={apply.isPending || data.fixed}
-                    className="social-btn inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13.5px] font-medium text-foreground disabled:opacity-45"
+                    disabled
+                    className="social-btn inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13.5px] font-medium text-foreground opacity-45 cursor-not-allowed"
+                    title="Dependency updates must be applied in your package manager"
                   >
-                    {apply.isPending ? (
-                      <Loader2 className="size-[15px] animate-spin" />
-                    ) : data.fixed ? (
-                      <CheckCircle2 className="size-[15px]" />
-                    ) : (
-                      <Wand2 className="size-[15px]" />
-                    )}
-                    {data.fixed
-                      ? "Fix applied"
-                      : apply.isPending
-                      ? data.fix_source === "ai"
-                        ? "Verifying fix..."
-                        : "Applying fix..."
-                      : "Apply fix"}
+                    <Package className="size-[15px]" />
+                    Update this dependency manually{extractRecommendedVersion(data.suggested_fix) ? ` (>= ${extractRecommendedVersion(data.suggested_fix)})` : ""}
                   </button>
-                )}
+                ) : (
+                  <>
+                    {autoFixable && (
+                      <button
+                        type="button"
+                        onClick={() => apply.mutate()}
+                        disabled={apply.isPending || data.fixed}
+                        className="social-btn inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13.5px] font-medium text-foreground disabled:opacity-45"
+                      >
+                        {apply.isPending ? (
+                          <Loader2 className="size-[15px] animate-spin" />
+                        ) : data.fixed ? (
+                          <CheckCircle2 className="size-[15px]" />
+                        ) : (
+                          <Wand2 className="size-[15px]" />
+                        )}
+                        {data.fixed
+                          ? "Fix applied"
+                          : apply.isPending
+                          ? data.fix_source === "ai"
+                            ? "Verifying fix..."
+                            : "Applying fix..."
+                          : "Apply fix"}
+                      </button>
+                    )}
 
-                <button
-                  type="button"
-                  onClick={() => regenerate.mutate()}
-                  disabled={regenerate.isPending}
-                  className="social-btn inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13.5px] font-medium text-foreground disabled:opacity-45"
-                >
-                  {regenerate.isPending ? (
-                    <Loader2 className="size-[15px] animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-[15px]" />
-                  )}
-                  Regenerate fix
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => regenerate.mutate()}
+                      disabled={regenerate.isPending}
+                      className="social-btn inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-[13.5px] font-medium text-foreground disabled:opacity-45"
+                    >
+                      {regenerate.isPending ? (
+                        <Loader2 className="size-[15px] animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-[15px]" />
+                      )}
+                      Regenerate fix
+                    </button>
+                  </>
+                )}
 
                 <button
                   type="button"

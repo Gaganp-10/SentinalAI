@@ -115,8 +115,11 @@ export function ScanPanel({
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
               <span className="font-medium text-foreground">Dependencies:</span>
               <span>{scan.dependency_summary.checked} checked</span>
+              {(scan.dependency_summary.failed ?? 0) > 0 && (
+                <span className="text-rose-400">· {scan.dependency_summary.failed} could not be checked (OSV unreachable)</span>
+              )}
               {scan.dependency_summary.not_checked > 0 && (
-                <span className="text-amber-400">· {scan.dependency_summary.not_checked} not checked</span>
+                <span className="text-amber-400">· {scan.dependency_summary.not_checked} not pinned</span>
               )}
               <span>· across {scan.dependency_summary.manifests} {scan.dependency_summary.manifests === 1 ? "manifest" : "manifests"}</span>
             </div>

@@ -132,6 +132,7 @@ import json
 # --- Scan History Schemas ---
 class DependencySummary(BaseModel):
     checked: int = 0
+    failed: int = 0
     not_checked: int = 0
     manifests: int = 0
 

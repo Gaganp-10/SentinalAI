@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Download, Package, ShieldAlert } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
@@ -61,6 +61,7 @@ function VulnerabilitiesPage() {
   const queryClient = useQueryClient();
 
   const [severity, setSeverity] = useState<string | null>(null);
+  const [depOnly, setDepOnly] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
 
@@ -76,8 +77,15 @@ function VulnerabilitiesPage() {
     retry: false,
   });
   const vulns = useQuery({
-    queryKey: ["projects", projectId, "vulnerabilities", severity],
-    queryFn: () => listVulnerabilities(projectId, severity ? { severity } : undefined),
+    queryKey: ["projects", projectId, "vulnerabilities", severity, depOnly],
+    queryFn: () =>
+      listVulnerabilities(
+        projectId,
+        {
+          ...(severity ? { severity } : {}),
+          ...(depOnly ? { type: "vulnerable_dependency" } : {}),
+        },
+      ),
     retry: false,
   });
 
@@ -182,9 +190,9 @@ function VulnerabilitiesPage() {
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
-              onClick={() => setSeverity(null)}
+              onClick={() => { setSeverity(null); setDepOnly(false); }}
               className={`social-btn rounded-full px-4 py-2 text-[12.5px] font-medium text-foreground ${
-                severity === null ? "" : "opacity-60"
+                severity === null && !depOnly ? "" : "opacity-60"
               }`}
             >
               All ({list.length})
@@ -193,14 +201,25 @@ function VulnerabilitiesPage() {
               <button
                 key={c.key}
                 type="button"
-                onClick={() => setSeverity(c.key)}
+                onClick={() => { setSeverity(c.key); setDepOnly(false); }}
                 className={`social-btn rounded-full px-4 py-2 text-[12.5px] font-medium capitalize ${
-                  severity === c.key ? "" : "opacity-60"
+                  severity === c.key && !depOnly ? "" : "opacity-60"
                 } ${severityTone(c.key)}`}
               >
                 {c.key} ({c.count})
               </button>
             ))}
+            {/* Dependency filter chip */}
+            <button
+              type="button"
+              onClick={() => { setDepOnly((v) => !v); setSeverity(null); }}
+              className={`social-btn inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12.5px] font-medium text-teal-400 ${
+                depOnly ? "" : "opacity-60"
+              }`}
+            >
+              <Package className="size-[13px]" />
+              Dependency ({list.filter((v) => v.type === "vulnerable_dependency").length})
+            </button>
           </div>
 
           {vulns.isLoading && (

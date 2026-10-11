@@ -17,6 +17,10 @@ SEVERITY_RANKS = {
     "info": 0
 }
 
+# Maximum advisories to include in explanations, PDFs, and Copilot context.
+# Excess advisories are summarised as "and N more" with an osv.dev search link.
+MAX_ADVISORIES_SHOWN = 10
+
 
 def normalize_severity(sev_raw: Optional[str]) -> Tuple[str, bool]:
     """
@@ -57,8 +61,31 @@ def parse_dotted_maven(ver_str: str) -> Optional[Tuple[int, ...]]:
         return None
 
 
+def _is_valid_ecosystem_version(ecosystem: str, ver_str: str) -> bool:
+    """Validates that a string looks like an ecosystem version, not a git commit SHA."""
+    if not ver_str:
+        return False
+    # Reject 40-character hex commit hashes from git ranges
+    if re.fullmatch(r"[0-9a-fA-F]{40}", ver_str):
+        return False
+    if ecosystem == "PyPI":
+        try:
+            parse_pypi_version(ver_str)
+            return True
+        except (InvalidVersion, TypeError):
+            return False
+    elif ecosystem == "npm":
+        return parse_semver_npm(ver_str) is not None
+    elif ecosystem == "Maven":
+        return parse_dotted_maven(ver_str) is not None
+    return False
+
+
 def extract_fixed_versions(advisory: dict, ecosystem: str, package_name: str) -> List[str]:
-    """Extracts fixed version strings from an advisory for the matching package."""
+    """
+    Extracts valid package fixed version strings from an advisory for the matching package.
+    Ignores GIT-type ranges and commit hashes in favor of ECOSYSTEM/SEMVER ranges.
+    """
     fixed: List[str] = []
     for aff in advisory.get("affected", []):
         pkg = aff.get("package", {})
@@ -72,12 +99,17 @@ def extract_fixed_versions(advisory: dict, ecosystem: str, package_name: str) ->
             name_match = (pname.lower() == package_name.lower())
 
         if eco_match and name_match:
-            for r in aff.get("ranges", []):
+            ranges = aff.get("ranges", [])
+            for r in ranges:
+                # Do not extract git commit SHAs from GIT ranges
+                if r.get("type") == "GIT":
+                    continue
                 for ev in r.get("events", []):
                     if "fixed" in ev and ev["fixed"]:
                         f_ver = str(ev["fixed"]).strip()
-                        if f_ver not in fixed:
-                            fixed.append(f_ver)
+                        if _is_valid_ecosystem_version(ecosystem, f_ver):
+                            if f_ver not in fixed:
+                                fixed.append(f_ver)
     return fixed
 
 
@@ -87,45 +119,57 @@ def compute_minimum_covering_version(
 ) -> Optional[str]:
     """
     Computes the minimum version that covers all advisories.
-    If any advisory has no fixed version, returns None.
+    If any advisory has no valid fixed version, returns None.
     """
     if not fixed_versions_by_advisory:
         return None
 
-    # Every advisory must provide at least one fixed version
+    # Every advisory must provide at least one valid fixed version
     for fixes in fixed_versions_by_advisory:
         if not fixes:
             return None
 
-    all_fixes = [ver for fixes in fixed_versions_by_advisory for ver in fixes]
-
     if ecosystem == "PyPI":
-        try:
-            parsed = [(parse_pypi_version(v), v) for v in all_fixes]
-            # Max of the fixes covers all introduced <= fixed bounds
-            highest = max(parsed, key=lambda x: x[0])
-            return highest[1]
-        except (InvalidVersion, TypeError):
-            return None
+        adv_highest = []
+        for fixes in fixed_versions_by_advisory:
+            parsed = []
+            for v in fixes:
+                try:
+                    parsed.append((parse_pypi_version(v), v))
+                except (InvalidVersion, TypeError):
+                    continue
+            if not parsed:
+                return None
+            adv_highest.append(max(parsed, key=lambda x: x[0]))
+        highest = max(adv_highest, key=lambda x: x[0])
+        return highest[1]
 
     elif ecosystem == "npm":
-        parsed_npm = []
-        for v in all_fixes:
-            p = parse_semver_npm(v)
-            if p is None:
+        adv_highest = []
+        for fixes in fixed_versions_by_advisory:
+            parsed = []
+            for v in fixes:
+                p = parse_semver_npm(v)
+                if p is not None:
+                    parsed.append((p, v))
+            if not parsed:
                 return None
-            parsed_npm.append((p, v))
-        highest = max(parsed_npm, key=lambda x: x[0])
+            adv_highest.append(max(parsed, key=lambda x: x[0]))
+        highest = max(adv_highest, key=lambda x: x[0])
         return highest[1]
 
     elif ecosystem == "Maven":
-        parsed_mvn = []
-        for v in all_fixes:
-            p = parse_dotted_maven(v)
-            if p is None:
+        adv_highest = []
+        for fixes in fixed_versions_by_advisory:
+            parsed = []
+            for v in fixes:
+                p = parse_dotted_maven(v)
+                if p is not None:
+                    parsed.append((p, v))
+            if not parsed:
                 return None
-            parsed_mvn.append((p, v))
-        highest = max(parsed_mvn, key=lambda x: x[0])
+            adv_highest.append(max(parsed, key=lambda x: x[0]))
+        highest = max(adv_highest, key=lambda x: x[0])
         return highest[1]
 
     return None
@@ -149,17 +193,12 @@ def build_dependency_finding(
     all_cwes: List[str] = []
     fixed_by_advisory: List[List[str]] = []
     advisory_details_list = []
+    advisory_sev_ranks: List[int] = []
 
     for aid in advisory_ids:
         rec = advisories_map.get(aid, {})
         # Extract severity
         sev_raw = rec.get("database_specific", {}).get("severity")
-        if not sev_raw and rec.get("severity"):
-            # If severity list with CVSS
-            for s_entry in rec.get("severity", []):
-                if isinstance(s_entry, dict) and s_entry.get("type", "").startswith("CVSS"):
-                    # keep score if needed
-                    pass
         sev_norm, is_prov = normalize_severity(sev_raw)
         if is_prov:
             any_sev_provided = True
@@ -195,12 +234,16 @@ def build_dependency_finding(
             "all_aliases": aliases,
             "summary": summary_clean,
             "severity": sev_norm.upper() if is_prov else "Not provided",
+            "severity_rank": rank,
             "fixed": fixes,
             "url": f"https://osv.dev/vulnerability/{aid}"
         })
 
     if not any_sev_provided:
         highest_sev = "medium"
+
+    # Sort advisory details by severity descending (highest first)
+    advisory_details_list.sort(key=lambda x: x["severity_rank"], reverse=True)
 
     first_cwe = all_cwes[0] if all_cwes else None
 
@@ -228,12 +271,19 @@ def build_dependency_finding(
     else:
         lines.append(f"Manual upgrade recommended: Review and update `{dep.name}` manually. No single safe fixed version could be automatically determined.")
 
+    total_advisories = len(advisory_details_list)
+    shown_advisories = advisory_details_list[:MAX_ADVISORIES_SHOWN]
+    hidden_count = total_advisories - len(shown_advisories)
+    osv_search_url = f"https://osv.dev/list?ecosystem={dep.ecosystem}&q={dep.name}"
+
     lines.append("")
-    lines.append(f"#### Known Vulnerabilities ({len(advisory_details_list)} advisories)")
-    for item in advisory_details_list:
+    lines.append(f"#### Known Vulnerabilities ({total_advisories} advisories)")
+    for item in shown_advisories:
         alias_str = f" ({item['cve']})" if item['cve'] else ""
         fix_str = f" — Fixed in: `{', '.join(item['fixed'])}`" if item['fixed'] else " — No fixed version reported"
         lines.append(f"- **[{item['id']}]({item['url']}){alias_str}** [{item['severity']}]: {item['summary']}{fix_str}")
+    if hidden_count > 0:
+        lines.append(f"- *…and {hidden_count} more — [view all on osv.dev]({osv_search_url})*")
 
     recommendation_md = "\n".join(lines)
 
@@ -267,3 +317,52 @@ def build_dependency_finding(
         rule_id=f"osv-{dep.name}",
         issue_class=None  # Never merges with code findings
     )
+
+
+def build_copilot_context_for_dep(
+    dep_name: str,
+    dep_version: str,
+    ecosystem: str,
+    manifest_file: str,
+    recommended_version: Optional[str],
+    advisory_details: List[Dict],
+) -> str:
+    """
+    Builds a compact, capped context string for the AI Security Copilot for
+    vulnerable_dependency findings.  Only the package declaration line,
+    capped advisory summaries, and fixed versions are included.
+    The manifest/lockfile content is NEVER sent.
+    """
+    cap = MAX_ADVISORIES_SHOWN
+    shown = advisory_details[:cap]
+    hidden = len(advisory_details) - len(shown)
+
+    if ecosystem == "PyPI":
+        package_line = f"{dep_name}=={dep_version}"
+    elif ecosystem == "npm":
+        package_line = f'"{dep_name}": "{dep_version}"'
+    else:
+        # Maven: groupId:artifactId:version
+        package_line = f"{dep_name}:{dep_version}"
+
+    lines = [
+        f"Vulnerable dependency in `{manifest_file}`:",
+        f"  Package: {package_line}",
+        f"  Ecosystem: {ecosystem}",
+    ]
+    if recommended_version:
+        lines.append(f"  Recommended minimum version: >= {recommended_version}")
+    else:
+        lines.append("  Recommended minimum version: not determinable — manual review needed")
+
+    lines.append(f"\nKnown advisories ({len(advisory_details)} total, showing top {len(shown)}):")
+    for adv in shown:
+        cve_part = f" ({adv['cve']})" if adv.get("cve") else ""
+        fix_part = f"; fixed in {', '.join(adv['fixed'])}" if adv.get("fixed") else ""
+        lines.append(f"  - {adv['id']}{cve_part} [{adv['severity']}]: {adv['summary']}{fix_part}")
+
+    if hidden > 0:
+        osv_url = f"https://osv.dev/list?ecosystem={ecosystem}&q={dep_name}"
+        lines.append(f"  - ...and {hidden} more: {osv_url}")
+
+    return "\n".join(lines)

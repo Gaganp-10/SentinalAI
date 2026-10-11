@@ -9,6 +9,7 @@ export type Project = {
 
 export type DependencySummary = {
   checked: number;
+  failed?: number;
   not_checked: number;
   manifests: number;
 };

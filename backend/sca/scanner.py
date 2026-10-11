@@ -8,7 +8,7 @@ from backend.sca.parsers import (
     ParsedDependency,
     UnresolvedDependency,
 )
-from backend.sca.osv_client import OSVClient, OSVClientError
+from backend.sca.osv_client import OSVClient, OSVClientError, MAX_BATCH_SIZE
 from backend.sca.findings import build_dependency_finding
 
 logger = logging.getLogger(__name__)
@@ -20,10 +20,13 @@ def scan_dependencies(
 ) -> Tuple[List[Finding], List[str], Dict[str, int]]:
     """
     Executes Software Composition Analysis (SCA) on the uploaded project manifests.
+    Handles partial OSV failures: successful batch results are preserved even when
+    other batches fail.  Returns accurate checked/failed/not_checked counts.
+
     Returns:
         findings: List of Finding objects for vulnerable dependencies
         warnings: List of warning messages (unreachable OSV, unpinned packages, etc.)
-        summary: {"checked": N, "not_checked": M, "manifests": K}
+        summary: {"checked": N, "failed": F, "not_checked": M, "manifests": K}
     """
     if client is None:
         client = OSVClient()
@@ -37,14 +40,15 @@ def scan_dependencies(
     for u in unresolved:
         manifest_files.add(u.manifest_file)
 
-    checked_count = len({(d.ecosystem, d.name, d.version) for d in deps})
+    pinned_count = len({(d.ecosystem, d.name, d.version) for d in deps})
     not_checked_count = len(unresolved)
     manifests_count = len(manifest_files)
 
     summary = {
-        "checked": checked_count,
+        "checked": 0,
+        "failed": 0,
         "not_checked": not_checked_count,
-        "manifests": manifests_count
+        "manifests": manifests_count,
     }
 
     warnings: List[str] = list(parse_warnings)
@@ -57,36 +61,72 @@ def scan_dependencies(
     if not deps:
         return [], warnings, summary
 
-    # Group dependencies by (manifest_file, name, version)
-    # to preserve file and line locations
+    # Deduplicate deps for querying (multiple manifests can reference same package)
     deps_by_key: Dict[Tuple[str, str, str, str], ParsedDependency] = {}
-    query_payloads: List[Dict[str, str]] = []
+    unique_queries: List[Dict[str, str]] = []
+    seen_query_keys: Set[Tuple[str, str, str]] = set()
 
     for d in deps:
-        # Key includes manifest_file so multiple manifests with same dependency each get a finding
         k = (d.manifest_file, d.ecosystem, d.name, d.version)
         if k not in deps_by_key:
             deps_by_key[k] = d
-        query_payloads.append({
-            "ecosystem": d.ecosystem,
-            "name": d.name,
-            "version": d.version
-        })
 
-    # Query OSV.dev
-    try:
-        results_map, query_warns = client.query_batch(query_payloads)
-        warnings.extend(query_warns)
-    except OSVClientError as e:
-        warn_msg = "Dependency check could not be completed (OSV.dev unreachable)"
-        logger.warning(f"{warn_msg}: {e}")
+        qk = (d.ecosystem, d.name, d.version)
+        if qk not in seen_query_keys:
+            seen_query_keys.add(qk)
+            unique_queries.append({
+                "ecosystem": d.ecosystem,
+                "name": d.name,
+                "version": d.version,
+            })
+
+    # --- Partial-failure batch querying ---
+    # Split unique queries into chunks; query each independently so a failure
+    # in one chunk does not discard results from the others.
+    results_map: Dict[Tuple[str, str, str], List[str]] = {}
+    checked_count = 0
+    failed_count = 0
+    chunk_warnings: List[str] = []
+
+    chunks = [
+        unique_queries[i: i + MAX_BATCH_SIZE]
+        for i in range(0, len(unique_queries), MAX_BATCH_SIZE)
+    ]
+
+    for chunk in chunks:
+        try:
+            chunk_result, q_warns = client.query_batch(chunk)
+            results_map.update(chunk_result)
+            chunk_warnings.extend(q_warns)
+            checked_count += len(chunk)
+        except (OSVClientError, Exception) as e:
+            failed_count += len(chunk)
+            logger.warning(f"OSV batch failed for {len(chunk)} packages: {e}")
+
+    warnings.extend(chunk_warnings)
+
+    if failed_count > 0 and checked_count == 0:
+        # Complete failure
+        summary["checked"] = 0
+        summary["failed"] = pinned_count
+        warn_msg = (
+            f"0 checked · {pinned_count} could not be checked (OSV unreachable) · "
+            f"{not_checked_count} not pinned"
+        )
         warnings.append(warn_msg)
         return [], warnings, summary
-    except Exception as e:
-        warn_msg = f"Dependency check failed: {e}"
-        logger.error(warn_msg, exc_info=True)
-        warnings.append("Dependency check could not be completed (OSV.dev unreachable)")
-        return [], warnings, summary
+    elif failed_count > 0:
+        # Partial failure
+        summary["checked"] = checked_count
+        summary["failed"] = failed_count
+        warn_msg = (
+            f"{checked_count} checked · {failed_count} could not be checked (OSV batch error) · "
+            f"{not_checked_count} not pinned"
+        )
+        warnings.append(warn_msg)
+    else:
+        summary["checked"] = checked_count
+        summary["failed"] = 0
 
     # Collect all unique advisory IDs for packages with vulnerabilities
     all_adv_ids: Set[str] = set()
@@ -117,3 +157,4 @@ def scan_dependencies(
     # Sort findings by file path and severity
     findings.sort(key=lambda x: (x.file_path, x.line_number))
     return findings, warnings, summary
+

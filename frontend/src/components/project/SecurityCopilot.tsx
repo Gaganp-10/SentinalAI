@@ -18,12 +18,12 @@ import { askMentor, type ChatMessage } from "../../api/ai";
 import { toApiErrorMessage } from "../../api/client";
 
 interface SecurityCopilotProps {
-  vulnId?: string;
+  vulnId?: string | undefined;
   findingContext?: {
-    type?: string;
-    severity?: string;
-    filename?: string;
-  };
+    type?: string | undefined;
+    severity?: string | undefined;
+    filename?: string | undefined;
+  } | undefined;
 }
 
 export function SecurityCopilot({ vulnId, findingContext }: SecurityCopilotProps) {

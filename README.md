@@ -26,9 +26,15 @@ can safely generate and apply a real code fix directly to the file.
 - **Multi-engine detection** — Bandit (Python-specific rules), Semgrep
   (multi-language: JS, Java, C/C++, PHP), and a custom Python AST
   analyzer for additional rules, with results deduplicated across engines
+- **Software Composition Analysis (SCA)** — automated vulnerable dependency
+  scanning powered by OSV.dev API across Python (`requirements.txt`), JavaScript
+  (`package.json`, `package-lock.json`), and Java Maven (`pom.xml`) manifests,
+  with lockfile precedence, defensive XML parsing (`defusedxml`) to prevent entity expansion,
+  and deterministic covering-version upgrade guidance
 - **Accurate CWE and OWASP mapping** — every finding carries a
   normalized CWE ID extracted from the detector's own metadata (with a
-  comprehensive fallback map for Bandit), and the single-source
+  comprehensive fallback map for Bandit), dependency findings mapped directly
+  to OWASP A06:2021 (Vulnerable and Outdated Components), and the single-source
   OWASP Top 10:2021 category is always derived from `backend/utils/owasp_map.py`
   (never hardcoded per detector). Source: [owasp.org/Top10](https://owasp.org/Top10/)
 - **Structured explanations** — every finding includes Issue / Reason /
@@ -57,6 +63,7 @@ can safely generate and apply a real code fix directly to the file.
 - JWT auth (python-jose) + bcrypt, plus Google OAuth (ID token
   verification)
 - Bandit, Semgrep, custom AST analyzer
+- OSV.dev client (httpx) + defusedxml for Software Composition Analysis (SCA)
 - OpenAI-compatible AI layer (swappable provider), with a safe
   template-based fallback when no AI key is configured
 - xhtml2pdf for PDF report generation
@@ -173,6 +180,7 @@ GET    /reports/{id}?format=pdf|html|json|csv
 ├── backend/
 │   ├── api/            # route handlers (incl. owasp.py)
 │   ├── detectors/       # Bandit/Semgrep/AST wrappers + orchestrator
+│   ├── sca/             # Software Composition Analysis (OSV.dev client, parsers, findings)
 │   ├── utils/
 │   │   └── owasp_map.py  # single-source CWE→OWASP Top 10:2021 table
 │   ├── ai/               # AI provider interface + fallback templates
@@ -192,6 +200,7 @@ GET    /reports/{id}?format=pdf|html|json|csv
 
 ## Known Limitations / Roadmap
 
+### General
 - Automatic fixing currently covers a fixed set of well-understood
   vulnerability types; broader AI-driven fix generation for arbitrary
   findings is planned once a funded AI provider is in place
@@ -208,6 +217,19 @@ GET    /reports/{id}?format=pdf|html|json|csv
   paid Apple Developer account)
 - Not yet deployed to a public host — currently designed to run locally
   or via Docker
+
+### Software Composition Analysis (SCA) — Limitations
+
+| Limitation | Detail |
+|---|---|
+| **Internet required** | Dependency scanning queries `https://api.osv.dev` at scan time. Scans will partially or fully fail if the host has no outbound internet access. Findings from any batches that succeeded are always preserved. |
+| **Versions sent to OSV** | Package name, ecosystem string (`PyPI`, `npm`, `Maven`), and exact version are transmitted to `api.osv.dev` in compliance with the [OSV Query API](https://google.github.io/osv.dev/post-v1-query/). No file content is sent. |
+| **Pinned / resolved versions only** | Only dependencies with an exact pinned version are queried. Unpinned ranges (e.g., `flask>=2.0`, `express: ^4.18.0`) are reported as `not_checked` in the dependency summary and listed in scan warnings. |
+| **No automatic fix** | Dependency vulnerabilities are never auto-patched. The UI shows a disabled *"Update this dependency manually (>= X)"* button. Upgrades must be applied by the developer in their package manager (`pip`, `npm`, `mvn`). |
+| **Supported ecosystems** | Only `PyPI` (`requirements.txt`, `requirements-*.txt`), `npm` (`package.json` / `package-lock.json`), and `Maven` (`pom.xml`) are scanned. Go, Rust, Ruby, PHP, and other ecosystems are not yet supported. |
+| **Transitive dependencies** | Transitive dependencies are resolved from `package-lock.json` (npm) when present; for `requirements.txt` and `pom.xml` only directly listed packages are checked. |
+| **OSV data freshness** | Advisory data is fetched live at scan time (6-hour in-memory cache per process). OSV may not yet have published advisories for newly disclosed CVEs. |
+
 
 ## Validation
 

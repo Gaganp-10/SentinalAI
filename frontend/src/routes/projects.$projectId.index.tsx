@@ -137,7 +137,7 @@ function ProjectDetailPage() {
     onMutate: () => setProgress(0),
     onSuccess: async (uploadedFiles) => {
       await queryClient.invalidateQueries({ queryKey: ["projects", projectId, "files"] });
-      if (uploadedFiles.length === 1) {
+      if (uploadedFiles.length === 1 && uploadedFiles[0]) {
         toast.success(`Uploaded ${uploadedFiles[0].filename}`);
       } else {
         toast.success(`Uploaded ${uploadedFiles.length} files from ZIP archive`);

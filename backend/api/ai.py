@@ -34,8 +34,9 @@ def ask_security_mentor(
 ):
     """
     Acts as a 'security mentor' Q&A endpoint.
-    Allows developers to ask detailed questions about a specific scan finding or general security topics,
-    leveraging the AI provider with optional context of the vulnerability and source code.
+    For vulnerable_dependency findings: sends only the package line + capped advisory
+    summaries (never the manifest/lockfile content).
+    For code findings: sends the full file source for context.
     """
     # Fold recent conversation history (last 6 messages max) into question prompt
     folded_question = request.question
@@ -61,27 +62,97 @@ def ask_security_mentor(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Vulnerability not found"
             )
+
+        if vuln.type == "vulnerable_dependency":
+            # --- Dependency finding: build compact context, never read the manifest file ---
+            from backend.sca.findings import build_copilot_context_for_dep
+
+            # Parse advisory details out of the stored recommendation markdown if possible.
+            # Fall back to a minimal context derived from description + code_snippet.
+            recommended_version: Optional[str] = None
+            advisory_details: List[dict] = []
+
+            if vuln.suggested_fix:
+                # e.g. "Update requests to >= 2.32.0"
+                import re as _re
+                m = _re.search(r">=\s*(\S+)", vuln.suggested_fix or "")
+                if m:
+                    recommended_version = m.group(1)
+
+            # Recover advisory details from recommendation markdown if present
+            if vuln.recommendation:
+                import re as _re
+                for line in vuln.recommendation.splitlines():
+                    m_adv = _re.match(
+                        r"-\s+\*\*\[(?P<id>[^\]]+)\]\((?P<url>[^\)]*)\)(?:\s+\((?P<cve>[^\)]+)\))?\*\*\s+\[(?P<sev>[^\]]+)\]:\s+(?P<summary>.*?)(?:\s+—\s+Fixed in:\s+`(?P<fixed>[^`]+)`|\s+—\s+No fixed version reported)?$",
+                        line.strip()
+                    )
+                    if m_adv:
+                        fixed_str = m_adv.group("fixed")
+                        fixed_list = [v.strip() for v in fixed_str.split(",")] if fixed_str else []
+                        advisory_details.append({
+                            "id": m_adv.group("id"),
+                            "url": m_adv.group("url"),
+                            "cve": m_adv.group("cve"),
+                            "severity": m_adv.group("sev"),
+                            "summary": m_adv.group("summary").strip(),
+                            "fixed": fixed_list
+                        })
+
+            # Recover ecosystem + package from recommendation or description
+            # The code_snippet stores "name==version" (PyPI) or "name@version (manifest)"
+            snippet = vuln.code_snippet or ""
+            dep_name = vuln.description.split("'")[1] if "'" in (vuln.description or "") else snippet.split("==")[0].split("@")[0]
+            dep_version = vuln.description.split("'")[3] if vuln.description.count("'") >= 4 else ""
+
+            # Determine ecosystem from source_tool or manifest extension
+            manifest = vuln.file.filepath if vuln.file else ""
+            if manifest.endswith(".txt"):
+                ecosystem = "PyPI"
+            elif manifest.endswith(".json"):
+                ecosystem = "npm"
+            elif manifest.endswith(".xml"):
+                ecosystem = "Maven"
+            else:
+                ecosystem = "Unknown"
+
+            copilot_context = build_copilot_context_for_dep(
+                dep_name=dep_name,
+                dep_version=dep_version,
+                ecosystem=ecosystem,
+                manifest_file=os.path.basename(manifest),
+                recommended_version=recommended_version,
+                advisory_details=advisory_details,
+            )
+
+            answer_text = provider.ask_question(
+                question=folded_question,
+                type_name=vuln.type,
+                description=vuln.description,
+                code_snippet=snippet or None,
+                full_file_source=copilot_context
+            )
+        else:
+            # Code finding: read full source file for context
+            project_id = vuln.file.project_id
+            project_dir = os.path.abspath(os.path.join(settings.UPLOAD_DIR, str(project_id)))
+            full_file_path = os.path.join(project_dir, vuln.file.filepath)
             
-        # Read file context from uploads
-        project_id = vuln.file.project_id
-        project_dir = os.path.abspath(os.path.join(settings.UPLOAD_DIR, str(project_id)))
-        full_file_path = os.path.join(project_dir, vuln.file.filepath)
-        
-        full_file_content = None
-        if os.path.exists(full_file_path):
-            try:
-                with open(full_file_path, "r", encoding="utf-8", errors="ignore") as f:
-                    full_file_content = f.read()
-            except Exception as e:
-                logger.warning(f"Could not load full source file for AI mentor: {e}")
-                
-        answer_text = provider.ask_question(
-            question=folded_question,
-            type_name=vuln.type,
-            description=vuln.description,
-            code_snippet=vuln.code_snippet,
-            full_file_source=full_file_content
-        )
+            full_file_content = None
+            if os.path.exists(full_file_path):
+                try:
+                    with open(full_file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        full_file_content = f.read()
+                except Exception as e:
+                    logger.warning(f"Could not load full source file for AI mentor: {e}")
+                    
+            answer_text = provider.ask_question(
+                question=folded_question,
+                type_name=vuln.type,
+                description=vuln.description,
+                code_snippet=vuln.code_snippet,
+                full_file_source=full_file_content
+            )
     else:
         # General application-security inquiry
         answer_text = provider.ask_question(
@@ -93,3 +164,4 @@ def ask_security_mentor(
         )
         
     return MentorAnswer(answer=answer_text)
+

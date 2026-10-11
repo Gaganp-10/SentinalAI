@@ -170,6 +170,22 @@ class TestParsePomXml:
         deps, _, _ = self._p(xml)
         assert deps[0].dev is True
 
+    def test_hostile_entity_expansion_rejected(self):
+        hostile_xml = (
+            '<?xml version="1.0"?>\n'
+            '<!DOCTYPE lolz [\n'
+            ' <!ENTITY lol "lol">\n'
+            ' <!ENTITY lol2 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;">\n'
+            ' <!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;">\n'
+            ']>\n'
+            '<project><dependencies><dependency>'
+            '<groupId>&lol3;</groupId><artifactId>lib</artifactId><version>1.0</version>'
+            '</dependency></dependencies></project>'
+        )
+        deps, unres, warns = self._p(hostile_xml)
+        assert deps == []
+        assert any("hostile" in w.lower() or "rejected" in w.lower() or "entity" in w.lower() for w in warns)
+
 
 class TestParseManifestsInDirectory:
     def test_requirements_found(self, tmp_path):
@@ -447,8 +463,26 @@ class TestScanDependencies:
         _write(tmp_path, "requirements.txt", "requests==2.19.0\n")
         c = MagicMock()
         c.query_batch.side_effect = OSVClientError("down")
-        findings, warns, _ = scan_dependencies(str(tmp_path), client=c)
-        assert findings == [] and any("unreachable" in w.lower() or "OSV" in w for w in warns)
+        findings, warns, s = scan_dependencies(str(tmp_path), client=c)
+        assert findings == []
+        assert any("unreachable" in w.lower() or "OSV" in w for w in warns)
+        assert s["checked"] == 0
+        assert s["failed"] == 1
+        assert s["not_checked"] == 0
+        assert any("0 checked · 1 could not be checked (OSV unreachable) · 0 not pinned" in w for w in warns)
+
+    def test_osv_unreachable_with_unpinned(self, tmp_path):
+        from backend.sca.scanner import scan_dependencies
+        from backend.sca.osv_client import OSVClientError
+        _write(tmp_path, "requirements.txt", "requests==2.19.0\ndjango==2.2.0\nflask>=2.0\n")
+        c = MagicMock()
+        c.query_batch.side_effect = OSVClientError("down")
+        findings, warns, s = scan_dependencies(str(tmp_path), client=c)
+        assert findings == []
+        assert s["checked"] == 0
+        assert s["failed"] == 2
+        assert s["not_checked"] == 1
+        assert any("0 checked · 2 could not be checked (OSV unreachable) · 1 not pinned" in w for w in warns)
 
     def test_unpinned_adds_warning(self, tmp_path):
         from backend.sca.scanner import scan_dependencies
@@ -463,7 +497,10 @@ class TestScanDependencies:
         _write(tmp_path, "requirements.txt", "requests==2.28.0\n")
         c = self._client(vuln_map={("PyPI", "requests", "2.28.0"): []})
         _, _, s = scan_dependencies(str(tmp_path), client=c)
-        assert "checked" in s and "not_checked" in s and "manifests" in s
+        assert "checked" in s and "failed" in s and "not_checked" in s and "manifests" in s
+        assert s["checked"] == 1
+        assert s["failed"] == 0
+        assert s["not_checked"] == 0
 
     def test_two_manifests_counted(self, tmp_path):
         from backend.sca.scanner import scan_dependencies
@@ -597,6 +634,11 @@ class TestManifestDetection:
         from backend.parser.language_detect import is_manifest_filename
         assert not is_manifest_filename("app.py")
 
+    def test_rejected_manifest_names(self):
+        from backend.parser.language_detect import is_manifest_filename
+        for bad_name in ("notes.txt", "data.json", "config.xml", "manifest.json", "setup.py", "pom.json"):
+            assert not is_manifest_filename(bad_name), f"{bad_name!r} should not be recognized as manifest"
+
     def test_detect_manifest(self):
         from backend.parser.language_detect import detect_language
         assert detect_language("requirements.txt") == "manifest"
@@ -675,3 +717,202 @@ class TestExtractFixedVersions:
         adv = {"affected": [{"package": {"name": "Pillow", "ecosystem": "PyPI"},
                              "ranges": [{"events": [{"introduced": "0"}, {"fixed": "9.3.0"}]}]}]}
         assert "9.3.0" in extract_fixed_versions(adv, "PyPI", "pillow")
+
+
+# ============================================================
+# 11. Copilot context for vulnerable_dependency
+# ============================================================
+
+class TestCopilotContextForDep:
+    """build_copilot_context_for_dep must produce compact, capped context
+    without ever including manifest file content."""
+
+    def _make_advisories(self, n: int):
+        """Return n advisory detail dicts with incrementing severity."""
+        sevs = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+        result = []
+        for i in range(n):
+            result.append({
+                "id": f"GHSA-{i:04d}",
+                "cve": f"CVE-2024-{i:04d}" if i % 2 == 0 else None,
+                "summary": f"Vulnerability number {i}",
+                "severity": sevs[i % len(sevs)],
+                "severity_rank": 4 - (i % 4),
+                "fixed": [f"1.{i}.0"] if i % 3 != 0 else [],
+                "url": f"https://osv.dev/vulnerability/GHSA-{i:04d}",
+            })
+        return result
+
+    def test_package_line_pypi(self):
+        from backend.sca.findings import build_copilot_context_for_dep
+        ctx = build_copilot_context_for_dep(
+            dep_name="requests",
+            dep_version="2.19.0",
+            ecosystem="PyPI",
+            manifest_file="requirements.txt",
+            recommended_version="2.32.0",
+            advisory_details=self._make_advisories(1),
+        )
+        assert "requests==2.19.0" in ctx
+
+    def test_package_line_npm(self):
+        from backend.sca.findings import build_copilot_context_for_dep
+        ctx = build_copilot_context_for_dep(
+            dep_name="lodash",
+            dep_version="4.17.15",
+            ecosystem="npm",
+            manifest_file="package.json",
+            recommended_version="4.18.0",
+            advisory_details=self._make_advisories(1),
+        )
+        assert '"lodash": "4.17.15"' in ctx
+
+    def test_recommended_version_shown(self):
+        from backend.sca.findings import build_copilot_context_for_dep
+        ctx = build_copilot_context_for_dep(
+            dep_name="django",
+            dep_version="2.2.0",
+            ecosystem="PyPI",
+            manifest_file="requirements.txt",
+            recommended_version="3.2.25",
+            advisory_details=self._make_advisories(2),
+        )
+        assert ">= 3.2.25" in ctx
+
+    def test_cap_10_advisories(self):
+        """Exactly 10 advisories should appear when more than 10 are given."""
+        from backend.sca.findings import build_copilot_context_for_dep, MAX_ADVISORIES_SHOWN
+        advisories = self._make_advisories(15)
+        ctx = build_copilot_context_for_dep(
+            dep_name="pkg",
+            dep_version="1.0.0",
+            ecosystem="PyPI",
+            manifest_file="requirements.txt",
+            recommended_version=None,
+            advisory_details=advisories,
+        )
+        # 10 should be shown, rest summarised
+        assert f"showing top {MAX_ADVISORIES_SHOWN}" in ctx
+        assert "...and 5 more" in ctx
+        # The 11th advisory ID should NOT be in context
+        assert "GHSA-0010" not in ctx
+
+    def test_no_manifest_content(self):
+        """Context must never contain the word 'manifest file content'."""
+        from backend.sca.findings import build_copilot_context_for_dep
+        ctx = build_copilot_context_for_dep(
+            dep_name="pyyaml",
+            dep_version="5.1",
+            ecosystem="PyPI",
+            manifest_file="requirements.txt",
+            recommended_version=None,
+            advisory_details=self._make_advisories(3),
+        )
+        # Manifest content keywords that should never appear in compact context
+        assert "import" not in ctx
+        assert "def " not in ctx
+
+    def test_no_recommended_shows_manual_review(self):
+        from backend.sca.findings import build_copilot_context_for_dep
+        ctx = build_copilot_context_for_dep(
+            dep_name="requests",
+            dep_version="2.19.0",
+            ecosystem="PyPI",
+            manifest_file="requirements.txt",
+            recommended_version=None,
+            advisory_details=self._make_advisories(1),
+        )
+        assert "manual review" in ctx.lower()
+
+
+# ============================================================
+# 12. Partial OSV failure
+# ============================================================
+
+class TestPartialOSVFailure:
+    """When some OSV batch chunks fail and others succeed, checked/failed counts
+    must be accurate and results from successful batches must be preserved."""
+
+    def _make_dep(self, name: str, version: str, ecosystem: str = "PyPI") -> dict:
+        return {"ecosystem": ecosystem, "name": name, "version": version}
+
+    def test_full_failure_sets_checked_0_failed_n(self, tmp_path):
+        """If all OSV chunks fail, checked=0, failed=package_count."""
+        _write(tmp_path, "requirements.txt", "requests==2.19.0\ndjango==2.2.0\n")
+
+        from unittest.mock import MagicMock
+        from backend.sca.osv_client import OSVClient, OSVClientError
+        from backend.sca.scanner import scan_dependencies
+
+        mock_client = MagicMock(spec=OSVClient)
+        mock_client.query_batch.side_effect = OSVClientError("Unreachable")
+
+        findings, warnings, summary = scan_dependencies(str(tmp_path), client=mock_client)
+
+        assert summary["checked"] == 0
+        assert summary["failed"] == 2  # 2 pinned packages
+        assert findings == []
+        # Warning must say "0 checked" and include "could not be checked"
+        combined = " ".join(warnings)
+        assert "0 checked" in combined
+        assert "could not be checked" in combined
+
+    def test_partial_failure_keeps_successful_results(self, tmp_path):
+        """If first batch succeeds and second fails, results from first are kept."""
+        _write(tmp_path, "requirements.txt",
+               "requests==2.19.0\ndjango==2.2.0\n")
+
+        from unittest.mock import MagicMock, call
+        from backend.sca.osv_client import OSVClient, OSVClientError, MAX_BATCH_SIZE
+        from backend.sca.scanner import scan_dependencies
+
+        mock_client = MagicMock(spec=OSVClient)
+
+        # First call succeeds with one advisory hit, second call fails
+        def side_effect(queries):
+            if mock_client.query_batch.call_count == 1:
+                # Return hit for requests
+                key = ("PyPI", "requests", "2.19.0")
+                return {key: ["GHSA-fake-0001"]}, []
+            raise OSVClientError("Timeout")
+
+        mock_client.query_batch.side_effect = side_effect
+        # fetch_advisories returns empty (no full records needed for this test)
+        mock_client.fetch_advisories.return_value = ({}, [])
+
+        # Patch MAX_BATCH_SIZE to 1 so each package is a separate chunk
+        import backend.sca.scanner as scanner_mod
+        orig_batch = scanner_mod.MAX_BATCH_SIZE
+        scanner_mod.MAX_BATCH_SIZE = 1
+        try:
+            findings, warnings, summary = scan_dependencies(str(tmp_path), client=mock_client)
+        finally:
+            scanner_mod.MAX_BATCH_SIZE = orig_batch
+
+        # First chunk (requests) succeeded — should have 1 checked
+        assert summary["checked"] >= 1
+        # Second chunk (django) failed — should have at least 1 failed
+        assert summary["failed"] >= 1
+        # Partial failure warning
+        combined = " ".join(warnings)
+        assert "could not be checked" in combined
+
+    def test_complete_success_failed_is_zero(self, tmp_path):
+        """When all chunks succeed, failed must be 0."""
+        _write(tmp_path, "requirements.txt", "requests==2.28.2\n")
+
+        from unittest.mock import MagicMock
+        from backend.sca.osv_client import OSVClient
+        from backend.sca.scanner import scan_dependencies
+
+        mock_client = MagicMock(spec=OSVClient)
+        mock_client.query_batch.return_value = (
+            {("PyPI", "requests", "2.28.2"): []}, []
+        )
+
+        findings, warnings, summary = scan_dependencies(str(tmp_path), client=mock_client)
+
+        assert summary["failed"] == 0
+        assert summary["checked"] == 1
+        assert findings == []
+
