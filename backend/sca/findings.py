@@ -113,63 +113,106 @@ def extract_fixed_versions(advisory: dict, ecosystem: str, package_name: str) ->
     return fixed
 
 
+def is_strictly_greater(ecosystem: str, ver: str, base_ver: str) -> bool:
+    """Returns True if ver is strictly greater than base_ver in the given ecosystem."""
+    if not ver or not base_ver:
+        return False
+    if ecosystem == "PyPI":
+        try:
+            return parse_pypi_version(ver) > parse_pypi_version(base_ver)
+        except Exception:
+            return False
+    elif ecosystem == "npm":
+        v_parsed = parse_semver_npm(ver)
+        b_parsed = parse_semver_npm(base_ver)
+        if v_parsed is not None and b_parsed is not None:
+            return v_parsed > b_parsed
+        return False
+    elif ecosystem == "Maven":
+        v_parsed = parse_dotted_maven(ver)
+        b_parsed = parse_dotted_maven(base_ver)
+        if v_parsed is not None and b_parsed is not None:
+            return v_parsed > b_parsed
+        return False
+    return False
+
+
 def compute_minimum_covering_version(
     ecosystem: str,
-    fixed_versions_by_advisory: List[List[str]]
+    fixed_versions_by_advisory: List[List[str]],
+    installed_version: Optional[str] = None
 ) -> Optional[str]:
     """
-    Computes the minimum version that covers all advisories.
-    If any advisory has no valid fixed version, returns None.
+    Computes the recommended covering version according to the rule:
+    1. For each advisory, take the smallest fixed version strictly greater than the installed version.
+       Fixed versions lower than or equal to the installed version are ignored.
+    2. The overall recommendation is the maximum (highest) of those per-advisory minimums across all advisories.
+    3. If any advisory has no fixed version strictly greater than the installed version, returns None.
     """
     if not fixed_versions_by_advisory:
         return None
 
-    # Every advisory must provide at least one valid fixed version
-    for fixes in fixed_versions_by_advisory:
-        if not fixes:
-            return None
+    adv_minimums = []
 
     if ecosystem == "PyPI":
-        adv_highest = []
+        parsed_installed = None
+        if installed_version:
+            try:
+                parsed_installed = parse_pypi_version(installed_version)
+            except Exception:
+                pass
+
         for fixes in fixed_versions_by_advisory:
-            parsed = []
+            strictly_greater = []
             for v in fixes:
                 try:
-                    parsed.append((parse_pypi_version(v), v))
+                    pv = parse_pypi_version(v)
+                    if parsed_installed is None or pv > parsed_installed:
+                        strictly_greater.append((pv, v))
                 except (InvalidVersion, TypeError):
                     continue
-            if not parsed:
+            if not strictly_greater:
                 return None
-            adv_highest.append(max(parsed, key=lambda x: x[0]))
-        highest = max(adv_highest, key=lambda x: x[0])
+            smallest_for_adv = min(strictly_greater, key=lambda x: x[0])
+            adv_minimums.append(smallest_for_adv)
+
+        highest = max(adv_minimums, key=lambda x: x[0])
         return highest[1]
 
     elif ecosystem == "npm":
-        adv_highest = []
+        parsed_installed = parse_semver_npm(installed_version) if installed_version else None
+
         for fixes in fixed_versions_by_advisory:
-            parsed = []
+            strictly_greater = []
             for v in fixes:
                 p = parse_semver_npm(v)
                 if p is not None:
-                    parsed.append((p, v))
-            if not parsed:
+                    if parsed_installed is None or p > parsed_installed:
+                        strictly_greater.append((p, v))
+            if not strictly_greater:
                 return None
-            adv_highest.append(max(parsed, key=lambda x: x[0]))
-        highest = max(adv_highest, key=lambda x: x[0])
+            smallest_for_adv = min(strictly_greater, key=lambda x: x[0])
+            adv_minimums.append(smallest_for_adv)
+
+        highest = max(adv_minimums, key=lambda x: x[0])
         return highest[1]
 
     elif ecosystem == "Maven":
-        adv_highest = []
+        parsed_installed = parse_dotted_maven(installed_version) if installed_version else None
+
         for fixes in fixed_versions_by_advisory:
-            parsed = []
+            strictly_greater = []
             for v in fixes:
                 p = parse_dotted_maven(v)
                 if p is not None:
-                    parsed.append((p, v))
-            if not parsed:
+                    if parsed_installed is None or p > parsed_installed:
+                        strictly_greater.append((p, v))
+            if not strictly_greater:
                 return None
-            adv_highest.append(max(parsed, key=lambda x: x[0]))
-        highest = max(adv_highest, key=lambda x: x[0])
+            smallest_for_adv = min(strictly_greater, key=lambda x: x[0])
+            adv_minimums.append(smallest_for_adv)
+
+        highest = max(adv_minimums, key=lambda x: x[0])
         return highest[1]
 
     return None
@@ -247,8 +290,12 @@ def build_dependency_finding(
 
     first_cwe = all_cwes[0] if all_cwes else None
 
-    # Compute recommended covering version
-    recommended_version = compute_minimum_covering_version(dep.ecosystem, fixed_by_advisory)
+    # Compute recommended covering version according to the rule:
+    # For each advisory, take smallest fixed version strictly greater than installed version;
+    # Recommendation is highest of those across advisories. Fixed versions <= installed are ignored.
+    recommended_version = compute_minimum_covering_version(
+        dep.ecosystem, fixed_by_advisory, installed_version=dep.version
+    )
 
     # Dependency metadata description
     dep_nature = "Direct" if dep.direct is True else ("Transitive" if dep.direct is False else "Unknown dependency type")
@@ -264,12 +311,21 @@ def build_dependency_finding(
     if not any_sev_provided:
         lines.append("- **Severity Note**: Severity not provided by source (defaulted to medium).")
 
-    lines.append("")
+    # Collect all distinct fixed versions across advisories
+    all_fixed_versions: List[str] = []
+    for item in advisory_details_list:
+        for f in item.get("fixed", []):
+            if f not in all_fixed_versions:
+                all_fixed_versions.append(f)
+
     lines.append("#### Recommended Action")
+    lines.append(f"- **Recommendation Rule**: For each advisory, take the smallest fixed version strictly greater than installed (`{dep.version}`); the recommendation is the highest of those across advisories (fixed versions lower than or equal to installed are ignored).")
     if recommended_version:
         lines.append(f"Upgrade `{dep.name}` to **`{recommended_version}`** or newer to resolve all detected advisories.")
+    elif all_fixed_versions:
+        lines.append(f"Manual upgrade recommended: No single minimum covering version could be automatically determined (one or more advisories have no applicable fixed version strictly greater than `{dep.version}`). Available fixed versions reported across advisories: {', '.join(f'`{v}`' for v in all_fixed_versions)}. Review and select an appropriate version.")
     else:
-        lines.append(f"Manual upgrade recommended: Review and update `{dep.name}` manually. No single safe fixed version could be automatically determined.")
+        lines.append(f"Manual upgrade recommended: Review and update `{dep.name}` manually. No fixed version available across detected advisories.")
 
     total_advisories = len(advisory_details_list)
     shown_advisories = advisory_details_list[:MAX_ADVISORIES_SHOWN]
@@ -280,7 +336,11 @@ def build_dependency_finding(
     lines.append(f"#### Known Vulnerabilities ({total_advisories} advisories)")
     for item in shown_advisories:
         alias_str = f" ({item['cve']})" if item['cve'] else ""
-        fix_str = f" — Fixed in: `{', '.join(item['fixed'])}`" if item['fixed'] else " — No fixed version reported"
+        has_applicable_fix = any(is_strictly_greater(dep.ecosystem, fv, dep.version) for fv in item['fixed'])
+        if item['fixed'] and has_applicable_fix:
+            fix_str = f" — Fixed in: `{', '.join(item['fixed'])}`"
+        else:
+            fix_str = " — No fixed version available"
         lines.append(f"- **[{item['id']}]({item['url']}){alias_str}** [{item['severity']}]: {item['summary']}{fix_str}")
     if hidden_count > 0:
         lines.append(f"- *…and {hidden_count} more — [view all on osv.dev]({osv_search_url})*")

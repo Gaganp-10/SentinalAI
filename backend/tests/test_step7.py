@@ -396,15 +396,62 @@ class TestBuildDependencyFinding:
 class TestVersionComparison:
     def test_pypi_max(self):
         from backend.sca.findings import compute_minimum_covering_version
-        assert compute_minimum_covering_version("PyPI", [["2.28.0", "2.31.0"]]) == "2.31.0"
+        assert compute_minimum_covering_version("PyPI", [["2.28.0"], ["2.31.0"]], installed_version="2.19.0") == "2.31.0"
 
     def test_npm_max(self):
         from backend.sca.findings import compute_minimum_covering_version
-        assert compute_minimum_covering_version("npm", [["4.17.21"], ["4.18.0"]]) == "4.18.0"
+        assert compute_minimum_covering_version("npm", [["4.17.21"], ["4.18.0"]], installed_version="4.17.15") == "4.18.0"
 
     def test_maven(self):
         from backend.sca.findings import compute_minimum_covering_version
-        assert compute_minimum_covering_version("Maven", [["2.17.2"]]) == "2.17.2"
+        assert compute_minimum_covering_version("Maven", [["2.17.2"]], installed_version="2.14.1") == "2.17.2"
+
+    def test_fixes_below_installed_ignored_log4j(self):
+        from backend.sca.findings import compute_minimum_covering_version
+        # log4j 2.14.1: advisory has fixes ['2.3.2', '2.12.4', '2.17.1'].
+        # 2.3.2 and 2.12.4 are below installed 2.14.1 and must be ignored;
+        # smallest fix > 2.14.1 is 2.17.1.
+        res = compute_minimum_covering_version(
+            "Maven",
+            [["2.3.2", "2.12.4", "2.17.1"]],
+            installed_version="2.14.1"
+        )
+        assert res == "2.17.1"
+
+    def test_maximum_of_per_advisory_minimums_chosen(self):
+        from backend.sca.findings import compute_minimum_covering_version
+        # Advisory 1 has fixes ['2.2.28', '3.2.13', '4.0.4'] -> min > 2.2.0 is 2.2.28
+        # Advisory 2 has fixes ['5.2.17', '6.0.8', '6.1.1'] -> min > 2.2.0 is 5.2.17
+        # Overall recommendation must be max(2.2.28, 5.2.17) = 5.2.17
+        res = compute_minimum_covering_version(
+            "PyPI",
+            [["2.2.28", "3.2.13", "4.0.4"], ["5.2.17", "6.0.8", "6.1.1"]],
+            installed_version="2.2.0"
+        )
+        assert res == "5.2.17"
+
+    def test_advisory_with_no_applicable_fix_returns_none(self):
+        from backend.sca.findings import compute_minimum_covering_version
+        # All reported fixes are below installed version -> no applicable fix -> None
+        res = compute_minimum_covering_version(
+            "Maven",
+            [["2.3.1", "2.12.2"]],
+            installed_version="2.14.1"
+        )
+        assert res is None
+
+    def test_advisory_with_no_applicable_fix_produces_note(self):
+        from backend.sca.findings import build_dependency_finding
+        from backend.sca.parsers import ParsedDependency
+        dep = ParsedDependency(ecosystem="Maven", name="log4j-core", version="2.14.1",
+                               manifest_file="pom.xml", line=1, direct=True, dev=False)
+        adv = {"id": "G1", "aliases": [], "summary": "Unfixed on 2.14.x branch",
+               "database_specific": {"severity": "HIGH", "cwe_ids": []},
+               "affected": [{"package": {"name": "log4j-core", "ecosystem": "Maven"},
+                             "ranges": [{"events": [{"introduced": "0"}, {"fixed": "2.12.2"}, {"fixed": "2.3.1"}]}]}]}
+        f = build_dependency_finding(dep, ["G1"], {"G1": adv})
+        assert f.suggested_fix is None
+        assert "No fixed version available" in (f.recommendation or "")
 
     def test_none_no_fix_one_advisory(self):
         from backend.sca.findings import compute_minimum_covering_version

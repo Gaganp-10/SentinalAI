@@ -84,7 +84,7 @@ def ask_security_mentor(
                 import re as _re
                 for line in vuln.recommendation.splitlines():
                     m_adv = _re.match(
-                        r"-\s+\*\*\[(?P<id>[^\]]+)\]\((?P<url>[^\)]*)\)(?:\s+\((?P<cve>[^\)]+)\))?\*\*\s+\[(?P<sev>[^\]]+)\]:\s+(?P<summary>.*?)(?:\s+—\s+Fixed in:\s+`(?P<fixed>[^`]+)`|\s+—\s+No fixed version reported)?$",
+                        r"-\s+\*\*\[(?P<id>[^\]]+)\]\((?P<url>[^\)]*)\)(?:\s+\((?P<cve>[^\)]+)\))?\*\*\s+\[(?P<sev>[^\]]+)\]:\s+(?P<summary>.*?)(?:\s+—\s+Fixed in:\s+`(?P<fixed>[^`]+)`|\s+—\s+No fixed version (?:available|reported))?$",
                         line.strip()
                     )
                     if m_adv:
