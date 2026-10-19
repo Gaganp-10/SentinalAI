@@ -3,14 +3,16 @@ import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, status
 from sqlalchemy.orm import Session
-from typing import List
-from uuid import UUID
+from typing import List, Optional
+from uuid import UUID, uuid4
 
 from backend.database.session import get_db, SessionLocal
-from backend.models.models import Project, ScanHistory, File, Vulnerability, User
+from backend.models.models import Project, ScanHistory, File, Vulnerability, User, ScanFinding
 from backend.models.schemas import ScanHistoryOut
 from backend.api.auth import get_current_user
 from backend.utils.config import settings
+from backend.detectors.fingerprint import assign_fingerprints
+from backend.detectors.diff import compute_scan_diff
 
 router = APIRouter(tags=["Scans"])
 
@@ -70,8 +72,11 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
         from backend.ai.explainer import generate_vulnerability_explanation
         from backend.fixer.fix_generator import generate_patched_code
         
-        # 4. Process each unique finding
-        for finding in all_findings:
+        # 4. Assign fingerprints and process each unique finding
+        fingerprints = assign_fingerprints(all_findings)
+        scan_findings_to_insert = []
+
+        for idx, finding in enumerate(all_findings):
             norm_path = os.path.normpath(finding.file_path).replace("\\", "/")
             # Map back to DB File record
             db_file = db.query(File).filter(
@@ -137,8 +142,40 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
                 fix_source=fix_source
             )
             db.add(db_vuln)
+            db.flush()
+
+            # Prepare historical snapshot record
+            tools_list = [t.strip() for t in (finding.source_tool or "").split(",") if t.strip()]
+            scan_finding = ScanFinding(
+                id=uuid4(),
+                scan_id=scan.id,
+                project_id=project_id,
+                fingerprint=fingerprints[idx],
+                file_path=norm_path,
+                type=finding.type,
+                issue_class=finding.issue_class,
+                rule_id=finding.rule_id,
+                cwe_id=finding.cwe_id,
+                severity=finding.severity,
+                line_number=finding.line_number,
+                source_tools=json.dumps(tools_list),
+                vulnerability_id=db_vuln.id,
+                package_name=getattr(finding, "package_name", None),
+                package_version=getattr(finding, "package_version", None),
+            )
+            scan_findings_to_insert.append(scan_finding)
+
+        # Bulk insert scan findings snapshot
+        if scan_findings_to_insert:
+            db.bulk_save_objects(scan_findings_to_insert)
+
+        # 5. Determine engines that ran successfully
+        engines_run = list(orchestrator.engines_run)
+        if dep_summary:
+            if dep_summary.get("failed", 0) == 0 or dep_summary.get("checked", 0) > 0:
+                engines_run.append("osv")
             
-        # 5. Finalize scan metadata
+        # 6. Finalize scan metadata
         scan.total_issues = len(all_findings)
         scan.critical_count = critical_count
         scan.high_count = high_count
@@ -146,15 +183,30 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
         scan.low_count = low_count
         scan.warnings = json.dumps(all_warnings) if all_warnings else None
         scan.dependency_summary = json.dumps(dep_summary) if dep_summary else None
+        scan.engines_run = json.dumps(engines_run)
         scan.status = "completed"
         
         # Update parent project date
         project = db.query(Project).filter(Project.id == project_id).first()
         if project:
             project.scan_date = datetime.utcnow()
+
+        # 7. Retention pruning: keep ScanFinding rows for the 20 most recent scans per project
+        completed_scans = (
+            db.query(ScanHistory.id)
+            .filter(ScanHistory.project_id == project_id, ScanHistory.status == "completed")
+            .order_by(ScanHistory.scan_time.desc())
+            .all()
+        )
+        if len(completed_scans) > 20:
+            old_scan_ids = [s.id for s in completed_scans[20:]]
+            db.query(ScanFinding).filter(
+                ScanFinding.project_id == project_id,
+                ScanFinding.scan_id.in_(old_scan_ids)
+            ).delete(synchronize_session=False)
             
         db.commit()
-        logger.info(f"Scan {scan_history_id} completed successfully. Issues: {len(all_findings)}, Warnings: {len(all_warnings)}")
+        logger.info(f"Scan {scan_history_id} completed successfully. Issues: {len(all_findings)}, Warnings: {len(all_warnings)}, Engines: {engines_run}")
         
     except Exception as e:
         logger.error(f"Critical error during scan {scan_history_id}: {e}")
@@ -249,3 +301,110 @@ def get_project_scan_history(
         
     scans = db.query(ScanHistory).filter(ScanHistory.project_id == project_id).order_by(ScanHistory.scan_time.desc()).all()
     return scans
+
+
+def handle_scan_diff(
+    scan_id: UUID,
+    base: Optional[UUID],
+    db: Session,
+    current_user: User,
+    project_id: Optional[UUID] = None,
+):
+    # Verify target scan and project ownership
+    target_scan = (
+        db.query(ScanHistory)
+        .join(Project)
+        .filter(ScanHistory.id == scan_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not target_scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    project = (
+        db.query(Project)
+        .filter(Project.id == target_scan.project_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if project_id and project.id != project_id:
+        raise HTTPException(status_code=400, detail="Scan does not belong to the specified project")
+
+    if target_scan.status == "failed":
+        raise HTTPException(status_code=400, detail="Cannot compare a scan with failed status")
+
+    # Determine base scan
+    if not base:
+        base_scan = (
+            db.query(ScanHistory)
+            .filter(
+                ScanHistory.project_id == project.id,
+                ScanHistory.status == "completed",
+                ScanHistory.scan_time < target_scan.scan_time,
+            )
+            .order_by(ScanHistory.scan_time.desc())
+            .first()
+        )
+        if not base_scan:
+            return {
+                "baseline": True,
+                "scan_id": str(scan_id),
+                "notes": ["first scan, nothing to compare"],
+            }
+    else:
+        if base == scan_id:
+            raise HTTPException(status_code=400, detail="A scan cannot be compared with itself")
+
+        base_scan = db.query(ScanHistory).filter(ScanHistory.id == base).first()
+        if not base_scan:
+            raise HTTPException(status_code=404, detail="Base scan not found")
+
+        if base_scan.project_id != target_scan.project_id:
+            raise HTTPException(status_code=400, detail="Base scan belongs to a different project")
+
+        if base_scan.status == "failed":
+            raise HTTPException(status_code=400, detail="Base scan has failed status and cannot be used for comparison")
+
+        # Retention window check (must be within the 20 most recent completed scans)
+        retained = (
+            db.query(ScanHistory.id)
+            .filter(ScanHistory.project_id == project.id, ScanHistory.status == "completed")
+            .order_by(ScanHistory.scan_time.desc())
+            .limit(20)
+            .all()
+        )
+        retained_ids = {s.id for s in retained}
+        if base_scan.id not in retained_ids:
+            raise HTTPException(status_code=400, detail="Base scan is older than the retention window of 20 scans")
+
+    return compute_scan_diff(db, target_scan, base_scan, project)
+
+
+@router.get("/projects/{project_id}/scans/{scan_id}/diff")
+def get_project_scan_diff(
+    project_id: UUID,
+    scan_id: UUID,
+    base: Optional[UUID] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Compares the given scan against a base scan (defaults to previous completed scan).
+    Returns categorized findings: new, resolved, persisting, regressed, not_comparable.
+    """
+    return handle_scan_diff(scan_id, base, db, current_user, project_id=project_id)
+
+
+@router.get("/scans/{scan_id}/diff")
+def get_scan_diff(
+    scan_id: UUID,
+    base: Optional[UUID] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Double-mounted scan diff endpoint.
+    """
+    return handle_scan_diff(scan_id, base, db, current_user)
+

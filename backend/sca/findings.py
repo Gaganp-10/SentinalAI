@@ -61,6 +61,118 @@ def parse_dotted_maven(ver_str: str) -> Optional[Tuple[int, ...]]:
         return None
 
 
+def installed_major_minor(ecosystem: str, installed_version: str) -> Optional[Tuple[int, int]]:
+    """
+    Returns the (major, minor) tuple of the installed version string, or None
+    if it cannot be determined.  Used to detect when a recommendation is a
+    major-version jump and to compute the within-branch alternative.
+    """
+    if not installed_version:
+        return None
+    try:
+        if ecosystem == "PyPI":
+            v = parse_pypi_version(installed_version)
+            return (v.major, v.minor)
+        elif ecosystem == "npm":
+            t = parse_semver_npm(installed_version)
+            return (t[0], t[1]) if t and len(t) >= 2 else None
+        elif ecosystem == "Maven":
+            t = parse_dotted_maven(installed_version)
+            return (t[0], t[1]) if t and len(t) >= 2 else None
+    except Exception:
+        return None
+
+
+def compute_within_branch_version(
+    ecosystem: str,
+    fixed_versions_by_advisory: List[List[str]],
+    installed_version: str,
+    inst_major_minor: Tuple[int, int],
+) -> Tuple[Optional[str], int]:
+    """
+    Computes the smallest fixed version within the installed major.minor branch
+    that is strictly greater than the installed version, and counts how many
+    advisories it resolves.
+
+    Returns:
+        (within_branch_version, advisories_fixed_count)
+        within_branch_version is None if no advisory has a fix in the installed branch.
+
+    Algorithm:
+        For each advisory collect fixed versions that are:
+          (a) strictly greater than installed, AND
+          (b) in the same (major, minor) family.
+        Take the smallest per-advisory within-branch minimum.
+        The recommendation is the MAXIMUM of those (so upgrading to it satisfies
+        every advisory that has a within-branch fix).
+        advisories_fixed_count is the number of advisories that DO have a
+        within-branch fix <= the returned recommendation.
+    """
+    if not fixed_versions_by_advisory or not installed_version:
+        return (None, 0)
+
+    def same_branch_pypi(ver_str: str) -> bool:
+        try:
+            v = parse_pypi_version(ver_str)
+            return (v.major, v.minor) == inst_major_minor
+        except Exception:
+            return False
+
+    def same_branch_npm(ver_str: str) -> bool:
+        t = parse_semver_npm(ver_str)
+        return t is not None and len(t) >= 2 and (t[0], t[1]) == inst_major_minor
+
+    def same_branch_maven(ver_str: str) -> bool:
+        t = parse_dotted_maven(ver_str)
+        return t is not None and len(t) >= 2 and (t[0], t[1]) == inst_major_minor
+
+    same_branch = {
+        "PyPI":  same_branch_pypi,
+        "npm":   same_branch_npm,
+        "Maven": same_branch_maven,
+    }.get(ecosystem)
+    if same_branch is None:
+        return (None, 0)
+
+    # Per-advisory within-branch minimums
+    per_adv_wb_mins: List[str] = []
+    for fixes in fixed_versions_by_advisory:
+        candidates = [
+            v for v in fixes
+            if _is_valid_ecosystem_version(ecosystem, v)
+            and is_strictly_greater(ecosystem, v, installed_version)
+            and same_branch(v)
+        ]
+        if not candidates:
+            continue
+        if ecosystem == "PyPI":
+            smallest = min(candidates, key=lambda x: parse_pypi_version(x))
+        elif ecosystem == "npm":
+            smallest = min(candidates, key=lambda x: parse_semver_npm(x))
+        else:  # Maven
+            smallest = min(candidates, key=lambda x: parse_dotted_maven(x))
+        per_adv_wb_mins.append(smallest)
+
+    if not per_adv_wb_mins:
+        return (None, 0)
+
+    # Within-branch recommendation = max of per-advisory within-branch minimums
+    if ecosystem == "PyPI":
+        wb_rec = max(per_adv_wb_mins, key=lambda x: parse_pypi_version(x))
+    elif ecosystem == "npm":
+        wb_rec = max(per_adv_wb_mins, key=lambda x: parse_semver_npm(x))
+    else:
+        wb_rec = max(per_adv_wb_mins, key=lambda x: parse_dotted_maven(x))
+
+    # Count advisories resolved by the within-branch recommendation
+    fixed_count = sum(
+        1 for wb_min in per_adv_wb_mins
+        if is_strictly_greater(ecosystem, wb_rec, wb_min)
+        or wb_rec == wb_min
+    )
+    return (wb_rec, fixed_count)
+
+
 def _is_valid_ecosystem_version(ecosystem: str, ver_str: str) -> bool:
     """Validates that a string looks like an ecosystem version, not a git commit SHA."""
     if not ver_str:
@@ -324,6 +436,21 @@ def build_dependency_finding(
         dep.ecosystem, fixed_by_advisory, installed_version=dep.version
     )
 
+    # Detect major-version jump and compute within-branch alternative.
+    # A "major-version jump" is when the full recommendation has a higher
+    # major version number than the installed version.
+    inst_mm = installed_major_minor(dep.ecosystem, dep.version)
+    wb_version: Optional[str] = None
+    wb_fixed_count: int = 0
+    is_major_jump = False
+    if recommended_version and inst_mm is not None:
+        rec_mm = installed_major_minor(dep.ecosystem, recommended_version)
+        if rec_mm is not None and rec_mm[0] > inst_mm[0]:
+            is_major_jump = True
+            wb_version, wb_fixed_count = compute_within_branch_version(
+                dep.ecosystem, fixed_by_advisory, dep.version, inst_mm
+            )
+
     # Dependency metadata description
     dep_nature = "Direct" if dep.direct is True else ("Transitive" if dep.direct is False else "Unknown dependency type")
     dep_env = "Dev dependency" if dep.dev else "Production dependency"
@@ -345,10 +472,42 @@ def build_dependency_finding(
             if f not in all_fixed_versions:
                 all_fixed_versions.append(f)
 
+    total_advisories = len(advisory_details_list)
     lines.append("#### Recommended Action")
     lines.append(f"- **Recommendation Rule**: For each advisory, take the smallest fixed version strictly greater than installed (`{dep.version}`); the recommendation is the highest of those across advisories (fixed versions lower than or equal to installed are ignored).")
     if recommended_version:
-        lines.append(f"Upgrade `{dep.name}` to **`{recommended_version}`** or newer to resolve all detected advisories.")
+        if is_major_jump:
+            # Always show both upgrade paths when the full recommendation is a major-version jump.
+            wb_branch_str = f"{inst_mm[0]}.{inst_mm[1]}.x"
+            if wb_version:
+                wb_version_cell = f"`{wb_version}`"
+                wb_advisories_cell = f"{wb_fixed_count} of {total_advisories}"
+                wb_note = (
+                    f"- **Within your `{wb_branch_str}` branch**: Upgrade `{dep.name}` to "
+                    f"**`{wb_version}`** to resolve {wb_fixed_count} of {total_advisories} "
+                    f"advisories without a major-version change. "
+                    f"The remaining {total_advisories - wb_fixed_count} advisories have no fix "
+                    f"in the `{wb_branch_str}` branch and require a major upgrade."
+                )
+            else:
+                wb_version_cell = f"No fix in `{wb_branch_str}`"
+                wb_advisories_cell = f"0 of {total_advisories}"
+                wb_note = (
+                    f"- **Within your `{wb_branch_str}` branch**: None of the {total_advisories} "
+                    f"advisories have a fix within the `{wb_branch_str}` branch. "
+                    f"A major upgrade is required to resolve any of them."
+                )
+            lines.append(f"""Two upgrade paths are available:
+
+| Path | Version | Advisories resolved |
+|---|---|---|
+| **Within your `{wb_branch_str}` branch** | {wb_version_cell} | {wb_advisories_cell} |
+| **Fixes everything** (major upgrade) | `{recommended_version}` | all {total_advisories} |
+
+{wb_note}
+- **Fixes everything**: Upgrade `{dep.name}` to **`{recommended_version}`** to resolve all {total_advisories} known advisories (major version change required).""")
+        else:
+            lines.append(f"Upgrade `{dep.name}` to **`{recommended_version}`** or newer to resolve all detected advisories.")
     elif all_fixed_versions:
         lines.append(f"Manual upgrade recommended: No single minimum covering version could be automatically determined (one or more advisories have no applicable fixed version strictly greater than `{dep.version}`). Available fixed versions reported across advisories: {', '.join(f'`{v}`' for v in all_fixed_versions)}. Review and select an appropriate version.")
     else:
@@ -408,7 +567,10 @@ def build_dependency_finding(
         auto_fixable=False,
         fix_source=None,
         rule_id=f"osv-{dep.name}",
-        issue_class=None  # Never merges with code findings
+        issue_class=None,  # Never merges with code findings
+        package_name=dep.name,
+        package_version=dep.version,
+        ecosystem=dep.ecosystem
     )
 
 

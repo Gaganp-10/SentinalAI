@@ -1,0 +1,134 @@
+========================================================================================================================
+Per-Advisory Calculation: django==2.2.0  (PyPI)
+Total advisories fetched : 75
+========================================================================================================================
+
+#    Advisory ID          CVE                  Severity       Fixed versions (all)               Fixes > 2.2.0            WB min (2.2.x) Global min    
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+1    GHSA-2gwj-7jmv-h26r  CVE-2022-28346       CRITICAL       2.2.28, 3.2.13, 4.0.4              2.2.28, 3.2.13, 4.0.4    2.2.28         2.2.28        
+2    GHSA-2m34-jcjv-45xf  CVE-2020-13596       MODERATE       2.2.13, 3.0.7                      2.2.13, 3.0.7            2.2.13         2.2.13        
+3    GHSA-3gh2-xw74-jmcw  CVE-2020-9402        HIGH           1.11.29, 2.2.11, 3.0.4             2.2.11, 3.0.4            2.2.11         2.2.11        
+4    GHSA-3h9f-r86x-qvjx  CVE-2026-48588       LOW            5.2.16, 6.0.7                      5.2.16, 6.0.7            (none)         5.2.16        
+5    GHSA-53qw-q765-4fww  CVE-2021-45115       HIGH           2.2.26, 3.2.11, 4.0.1              2.2.26, 3.2.11, 4.0.1    2.2.26         2.2.26        
+6    GHSA-68w8-qjq3-2gfm  CVE-2021-33203       MODERATE       2.2.24, 3.1.12, 3.2.4              2.2.24, 3.1.12, 3.2.4    2.2.24         2.2.24        
+7    GHSA-6c3j-c64m-qhgq  CVE-2019-11358       MODERATE       2.1.9, 2.2.2                       2.2.2                    2.2.2          2.2.2         
+8    GHSA-6c7v-2f49-8h26  CVE-2019-12781       MODERATE       2.1.10, 2.2.3, 1.11.22             2.2.3                    2.2.3          2.2.3         
+9    GHSA-6cw3-g6wv-c2xv  CVE-2022-23833       HIGH           2.2.27, 3.2.12, 4.0.2              2.2.27, 3.2.12, 4.0.2    2.2.27         2.2.27        
+10   GHSA-6r97-cj55-9hrq  CVE-2019-14234       CRITICAL       1.11.23, 2.1.11, 2.2.4             2.2.4                    2.2.4          2.2.4         
+11   GHSA-6w2r-r2m5-xq5w  CVE-2025-57833       HIGH           4.2.24, 5.1.12, 5.2.6              4.2.24, 5.1.12, 5.2.6    (none)         4.2.24        
+12   GHSA-7rp2-fm2h-wchj  CVE-2019-12308       MODERATE       1.11.21, 2.1.9, 2.2.2              2.2.2                    2.2.2          2.2.2         
+13   GHSA-7xr5-9hcq-chf9  CVE-2025-48432       MODERATE       5.2.2, 5.1.10, 4.2.22              5.2.2, 5.1.10, 4.2.22    (none)         4.2.22        
+14   GHSA-8c5j-9r9f-c6w8  CVE-2021-45116       HIGH           2.2.26, 3.2.11, 4.0.1              2.2.26, 3.2.11, 4.0.1    2.2.26         2.2.26        
+15   GHSA-8cjm-8mp7-r2xf  CVE-2026-8404        LOW            5.2.15, 6.0.6                      5.2.15, 6.0.6            (none)         5.2.15        
+16   GHSA-8qcx-xf44-272x  CVE-2026-53878       MODERATE       5.2.16, 6.0.7                      5.2.16, 6.0.7            (none)         5.2.16        
+17   GHSA-8x94-hmjh-97hq  CVE-2022-36359       HIGH           3.2.15, 4.0.7                      3.2.15, 4.0.7            (none)         3.2.15        
+18   GHSA-923m-gv2p-w5qp  CVE-2026-48587       LOW            5.2.15, 6.0.6                      5.2.15, 6.0.6            (none)         5.2.15        
+19   GHSA-95rw-fx8r-36v6  CVE-2022-22818       MODERATE       2.2.27, 3.2.12, 4.0.2              2.2.27, 3.2.12, 4.0.2    2.2.27         2.2.27        
+20   GHSA-c4qh-4vgv-qc6g  CVE-2019-14232       HIGH           1.11.23, 2.1.11, 2.2.4             2.2.4                    2.2.4          2.2.4         
+21   GHSA-crhf-3pfg-w68w  CVE-2026-53877       MODERATE       5.2.16, 6.0.7                      5.2.16, 6.0.7            (none)         5.2.16        
+22   GHSA-fr28-569j-53c4  CVE-2020-24584       MODERATE       2.2.16, 3.0.10, 3.1.1              2.2.16, 3.0.10, 3.1.1    2.2.16         2.2.16        
+23   GHSA-frmv-pr5f-9mcr  CVE-2025-64459       CRITICAL       5.2.8, 5.1.14, 4.2.26              5.2.8, 5.1.14, 4.2.26    (none)         4.2.26        
+24   GHSA-fvgf-6h6h-3322  CVE-2021-3281        MODERATE       2.2.18, 3.1.6, 3.0.12              2.2.18, 3.1.6, 3.0.12    2.2.18         2.2.18        
+25   GHSA-h5jv-4p7w-64jg  CVE-2019-14233       HIGH           1.11.23, 2.1.11, 2.2.4             2.2.4                    2.2.4          2.2.4         
+26   GHSA-h7pc-vwp9-298g  CVE-2026-6873        LOW            5.2.15, 6.0.6                      5.2.15, 6.0.6            (none)         5.2.15        
+27   GHSA-hmr4-m2h5-33qx  CVE-2020-7471        CRITICAL       1.11.28, 2.2.10, 3.0.3             2.2.10, 3.0.3            2.2.10         2.2.10        
+28   GHSA-hvmf-r92r-27hr  CVE-2019-19118       HIGH           2.1.15, 2.2.8                      2.2.8                    2.2.8          2.2.8         
+29   GHSA-jrh2-hc4r-7jwx  CVE-2021-45452       MODERATE       2.2.26, 3.2.11, 4.0.1              2.2.26, 3.2.11, 4.0.1    2.2.26         2.2.26        
+30   GHSA-m6gj-h9gm-gw44  CVE-2020-24583       HIGH           2.2.16, 3.0.10, 3.1.1              2.2.16, 3.0.10, 3.1.1    2.2.16         2.2.16        
+31   GHSA-p99v-5w3c-jqq9  CVE-2021-33571       HIGH           2.2.24, 3.1.12, 3.2.4              2.2.24, 3.1.12, 3.2.4    2.2.24         2.2.24        
+32   GHSA-q238-5cxm-5c9h  CVE-2026-15830       MODERATE       5.2.17, 6.0.8, 6.1.1               5.2.17, 6.0.8, 6.1.1     (none)         5.2.17        
+33   GHSA-qm57-vhq3-3fwf  CVE-2021-32052       MODERATE       2.2.22, 3.1.10, 3.2.2              2.2.22, 3.1.10, 3.2.2    2.2.22         2.2.22        
+34   GHSA-qw25-v68c-qjf3  CVE-2025-64458       HIGH           5.2.8, 5.1.14, 4.2.26              5.2.8, 5.1.14, 4.2.26    (none)         4.2.26        
+35   GHSA-rrqc-c2jx-6jgv  CVE-2024-45231       MODERATE       5.1.1, 5.0.9, 4.2.16               5.1.1, 5.0.9, 4.2.16     (none)         4.2.16        
+36   GHSA-rxjp-mfm9-w4wr  CVE-2021-31542       HIGH           2.2.21, 3.1.9, 3.2.1               2.2.21, 3.1.9, 3.2.1     2.2.21         2.2.21        
+37   GHSA-v6rh-hp5x-86rv  CVE-2021-44420       MODERATE       2.2.25, 3.1.14, 3.2.10             2.2.25, 3.1.14, 3.2.10   2.2.25         2.2.25        
+38   GHSA-v9qg-3j8p-r63v  CVE-2019-14235       HIGH           1.11.23, 2.1.11, 2.2.4             2.2.4                    2.2.4          2.2.4         
+39   GHSA-vfq6-hq5r-27r6  CVE-2019-19844       CRITICAL       1.11.27, 2.2.9, 3.0.1              2.2.9, 3.0.1             2.2.9          2.2.9         
+40   GHSA-w24h-v9qh-8gxj  CVE-2022-28347       CRITICAL       2.2.28, 3.2.13, 4.0.4              2.2.28, 3.2.13, 4.0.4    2.2.28         2.2.28        
+41   GHSA-wpjr-j57x-wxfw  CVE-2020-13254       HIGH           2.2.13, 3.0.7                      2.2.13, 3.0.7            2.2.13         2.2.13        
+42   GHSA-wvqv-fj8w-qmhm  CVE-2026-15307       HIGH           5.2.17, 6.0.8                      5.2.17, 6.0.8            (none)         5.2.17        
+43   GHSA-xgxc-v2qg-chmh  CVE-2021-28658       MODERATE       2.2.20, 3.0.14, 3.1.8              2.2.20, 3.0.14, 3.1.8    2.2.20         2.2.20        
+44   PYSEC-2019-10        CVE-2019-12781       NOT_PROVIDED   2.1.10, 2.2.3, 1.11.22             2.2.3                    2.2.3          2.2.3         
+45   PYSEC-2019-11        CVE-2019-14232       NOT_PROVIDED   1.11.23, 2.1.11, 2.2.4             2.2.4                    2.2.4          2.2.4         
+46   PYSEC-2019-12        CVE-2019-14233       NOT_PROVIDED   2.1.11, 2.2.4, 1.11.23             2.2.4                    2.2.4          2.2.4         
+47   PYSEC-2019-13        CVE-2019-14234       NOT_PROVIDED   2.1.11, 1.11.23, 2.2.4             2.2.4                    2.2.4          2.2.4         
+48   PYSEC-2019-14        CVE-2019-14235       NOT_PROVIDED   2.2.4, 1.11.23, 2.1.11             2.2.4                    2.2.4          2.2.4         
+49   PYSEC-2019-15        CVE-2019-19118       NOT_PROVIDED   2.1.15, 2.2.8                      2.2.8                    2.2.8          2.2.8         
+50   PYSEC-2019-16        CVE-2019-19844       NOT_PROVIDED   1.11.27, 2.2.9                     2.2.9                    2.2.9          2.2.9         
+51   PYSEC-2019-79        CVE-2019-12308       NOT_PROVIDED   2.1.9, 1.11.21, 2.2.2              2.2.2                    2.2.2          2.2.2         
+52   PYSEC-2020-31        CVE-2020-13254       NOT_PROVIDED   2.2.13, 3.0.7                      2.2.13, 3.0.7            2.2.13         2.2.13        
+53   PYSEC-2020-32        CVE-2020-13596       NOT_PROVIDED   2.2.13, 3.0.7                      2.2.13, 3.0.7            2.2.13         2.2.13        
+54   PYSEC-2020-33        CVE-2020-24583       NOT_PROVIDED   2.2.16, 3.0.10, 3.1.1              2.2.16, 3.0.10, 3.1.1    2.2.16         2.2.16        
+55   PYSEC-2020-34        CVE-2020-24584       NOT_PROVIDED   2.2.16, 3.0.10, 3.1.1              2.2.16, 3.0.10, 3.1.1    2.2.16         2.2.16        
+56   PYSEC-2020-35        CVE-2020-7471        NOT_PROVIDED   1.11.28, 2.2.10, 3.0.3             2.2.10, 3.0.3            2.2.10         2.2.10        
+57   PYSEC-2020-36        CVE-2020-9402        NOT_PROVIDED   1.11.29, 2.2.11, 3.0.4             2.2.11, 3.0.4            2.2.11         2.2.11        
+58   PYSEC-2021-439       CVE-2021-44420       NOT_PROVIDED   2.2.25, 3.1.14, 3.2.10             2.2.25, 3.1.14, 3.2.10   2.2.25         2.2.25        
+59   PYSEC-2021-6         CVE-2021-28658       NOT_PROVIDED   2.2.20, 3.0.14, 3.1.8              2.2.20, 3.0.14, 3.1.8    2.2.20         2.2.20        
+60   PYSEC-2021-7         CVE-2021-31542       NOT_PROVIDED   2.2.21, 3.1.9, 3.2.1               2.2.21, 3.1.9, 3.2.1     2.2.21         2.2.21        
+61   PYSEC-2021-8         CVE-2021-32052       NOT_PROVIDED   2.2.22, 3.1.10, 3.2.2              2.2.22, 3.1.10, 3.2.2    2.2.22         2.2.22        
+62   PYSEC-2021-9         CVE-2021-3281        NOT_PROVIDED   2.2.18, 3.0.12, 3.1.6              2.2.18, 3.0.12, 3.1.6    2.2.18         2.2.18        
+63   PYSEC-2021-98        CVE-2021-33203       NOT_PROVIDED   2.2.24, 3.1.12, 3.2.4              2.2.24, 3.1.12, 3.2.4    2.2.24         2.2.24        
+64   PYSEC-2021-99        CVE-2021-33571       NOT_PROVIDED   2.2.24, 3.1.12, 3.2.4              2.2.24, 3.1.12, 3.2.4    2.2.24         2.2.24        
+65   PYSEC-2022-1         CVE-2021-45115       NOT_PROVIDED   2.2.26, 3.2.11, 4.0.1              2.2.26, 3.2.11, 4.0.1    2.2.26         2.2.26        
+66   PYSEC-2022-19        CVE-2022-22818       NOT_PROVIDED   2.2.27, 3.2.12, 4.0.2              2.2.27, 3.2.12, 4.0.2    2.2.27         2.2.27        
+67   PYSEC-2022-190       CVE-2022-28346       NOT_PROVIDED   4.0.4, 3.2.13, 2.2.28              4.0.4, 3.2.13, 2.2.28    2.2.28         2.2.28        
+68   PYSEC-2022-191       CVE-2022-28347       NOT_PROVIDED   4.0.4, 3.2.13, 2.2.28              4.0.4, 3.2.13, 2.2.28    2.2.28         2.2.28        
+69   PYSEC-2022-2         CVE-2021-45116       NOT_PROVIDED   2.2.26, 3.2.11, 4.0.1              2.2.26, 3.2.11, 4.0.1    2.2.26         2.2.26        
+70   PYSEC-2022-20        CVE-2022-23833       NOT_PROVIDED   2.2.27, 3.2.12, 4.0.2              2.2.27, 3.2.12, 4.0.2    2.2.27         2.2.27        
+71   PYSEC-2022-3         CVE-2021-45452       NOT_PROVIDED   2.2.26, 3.2.11, 4.0.1              2.2.26, 3.2.11, 4.0.1    2.2.26         2.2.26        
+72   PYSEC-2026-1297      CVE-2024-45231       NOT_PROVIDED   4.2.16, 5.0.9, 5.1.1               4.2.16, 5.0.9, 5.1.1     (none)         4.2.16        
+73   PYSEC-2026-3717      CVE-2026-15830       NOT_PROVIDED   5.2.17, 6.0.8                      5.2.17, 6.0.8            (none)         5.2.17        
+74   PYSEC-2026-4035      CVE-2026-15307       NOT_PROVIDED   5.2.17, 6.0.8                      5.2.17, 6.0.8            (none)         5.2.17        
+75   PYSEC-2026-628       CVE-2019-11358       NOT_PROVIDED   2.1.9, 2.2.2                       2.2.2                    2.2.2          2.2.2         
+-------------------------------------------------------------------------------------------------------------------------------------------------------
+
+COLUMN LEGEND
+------------------------------------------------------------
+  #              : row number (1-75)
+  Advisory ID    : OSV / GHSA identifier
+  CVE            : CVE alias (if any)
+  Severity       : database_specific.severity from OSV record
+  Fixed versions : all ECOSYSTEM-range fixed versions in advisory
+  Fixes > 2.2.0  : subset that are strictly greater than installed
+  WB min (2.2.x) : smallest fix > 2.2.0 that stays in the 2.2.x branch
+                   '(none)' = no fix exists within the 2.2.x branch
+  Global min     : smallest fix > 2.2.0 in any version
+                   '(none)' = advisory has no fix > 2.2.0 at all
+
+========================================================================================================================
+SUMMARY - HOW THE TWO UPGRADE PATHS ARE DETERMINED
+========================================================================================================================
+
+  Installed version          : django==2.2.0  (branch 2.2.x)
+  Total advisories           : 75
+
+  Rule for GLOBAL recommendation (Fixes everything)
+  -------------------------------------------------
+    For each advisory, take the smallest fixed version > installed.
+    The global recommendation = MAX of those per-advisory minimums.
+    Any advisory with no fix > installed makes the result indeterminate (None).
+
+  -> Global recommended version : 5.2.17
+     Advisories resolved        : 75 of 75
+     (Advisories with no applicable fix: 0)
+
+  Rule for WITHIN-BRANCH recommendation (Within your 2.2.x branch)
+  ------------------------------------------------------------------
+    For each advisory, take the smallest fixed version > 2.2.0 AND in 2.2.x.
+    Within-branch recommendation = MAX of those per-advisory within-branch minimums.
+    Count = advisories that have a within-branch fix <= that recommendation.
+
+  -> Within-branch recommended  : 2.2.28  (branch 2.2.x)
+     Advisories resolved        : 58 of 75
+     (Advisories with no 2.2.x fix: 17 -- require a major upgrade)
+
+  HOW THE FINDING CARD DISPLAYS THESE (when is_major_jump=True)
+  ----------------------------------------------------------------
+  | Path                          | Version         | Advisories resolved |
+  |-------------------------------|-----------------|---------------------|
+  | Within your 2.2.x branch      | 2.2.28          | 58 of 75            |
+  | Fixes everything (major)      | 5.2.17          | all 75              |
+
+========================================================================================================================
+END OF REPORT
+========================================================================================================================

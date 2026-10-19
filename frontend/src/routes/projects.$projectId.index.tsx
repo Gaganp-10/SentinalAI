@@ -17,9 +17,10 @@ import { ScanTimeline } from "../components/project/ScanTimeline";
 import { CodebaseVulnerabilityMap } from "../components/project/CodebaseVulnerabilityMap";
 import { SecurityCopilot } from "../components/project/SecurityCopilot";
 import { OwaspCoveragePanel } from "../components/project/OwaspCoveragePanel";
+import { ScanDiffPanel } from "../components/project/ScanDiffPanel";
 import { getCurrentUser } from "../api/auth";
 import { clearToken, toApiErrorMessage } from "../api/client";
-import { getProject, latestScan, listScans, type ScanHistory } from "../api/projects";
+import { getProject, latestScan, listScans, getScanDiff, type ScanHistory } from "../api/projects";
 import { getScan, listFiles, startScan, uploadFile } from "../api/files";
 import { listVulnerabilities } from "../api/vulnerabilities";
 
@@ -56,6 +57,7 @@ function ProjectDetailPage() {
   const [progress, setProgress] = useState(0);
   const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const [finishedScan, setFinishedScan] = useState<ScanHistory | undefined>(undefined);
+  const [diffScanId, setDiffScanId] = useState<string | null>(null);
 
   const me = useQuery({ queryKey: ["auth", "me"], queryFn: getCurrentUser, retry: false });
   const project = useQuery({
@@ -89,6 +91,13 @@ function ProjectDetailPage() {
       const status = query.state.data?.status?.toLowerCase();
       return status === "pending" || status === "running" ? 2000 : false;
     },
+  });
+
+  const diffQuery = useQuery({
+    queryKey: ["projects", projectId, "scans", diffScanId, "diff"],
+    queryFn: () => getScanDiff(projectId, diffScanId as string),
+    enabled: Boolean(diffScanId),
+    retry: false,
   });
 
   const authError =
@@ -243,10 +252,24 @@ function ProjectDetailPage() {
 
           <OwaspCoveragePanel projectId={projectId} />
 
+          {diffScanId && (
+            <ScanDiffPanel
+              projectId={projectId}
+              diff={diffQuery.data ?? null}
+              loading={diffQuery.isLoading}
+              error={diffQuery.isError ? toApiErrorMessage(diffQuery.error) : null}
+              onClose={() => setDiffScanId(null)}
+            />
+          )}
+
           <ScanHistoryList
             scans={scans.data ?? []}
             loading={scans.isLoading}
             error={scans.isError ? toApiErrorMessage(scans.error) : undefined}
+            activeCompareScanId={diffScanId}
+            onCompare={(scanId) => {
+              setDiffScanId((current) => (current === scanId ? null : scanId));
+            }}
           />
         </div>
       </main>

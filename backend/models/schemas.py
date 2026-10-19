@@ -149,9 +149,26 @@ class ScanHistoryOut(BaseModel):
     status: str
     warnings: Optional[List[str]] = None
     dependency_summary: Optional[DependencySummary] = None
+    engines_run: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
+
+    @field_validator("engines_run", mode="before")
+    @classmethod
+    def parse_engines_run(cls, v: Any) -> Optional[List[str]]:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                return [v] if v else []
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        return None
 
     @field_validator("warnings", mode="before")
     @classmethod

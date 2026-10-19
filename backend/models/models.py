@@ -89,8 +89,39 @@ class ScanHistory(Base):
     status = Column(String, nullable=False)  # enum: pending/running/completed/failed
     warnings = Column(Text, nullable=True)  # JSON-encoded list of warning strings
     dependency_summary = Column(Text, nullable=True)  # JSON-encoded dict: {"checked": N, "not_checked": M, "manifests": K}
+    engines_run = Column(Text, nullable=True)  # JSON-encoded list of engine names: ["bandit", "ast", "semgrep", "osv"]
 
     project = relationship("Project", back_populates="scan_histories")
+    scan_findings = relationship("ScanFinding", back_populates="scan", cascade="all, delete-orphan", passive_deletes=True)
+
+
+class ScanFinding(Base):
+    """
+    Historical snapshot of findings detected in each completed scan.
+    Retained for the 20 most recent scans per project to enable regression detection
+    and scan diff comparisons.
+    """
+    __tablename__ = "scan_findings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    scan_id = Column(UUID(as_uuid=True), ForeignKey("scan_history.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    fingerprint = Column(String(128), nullable=False, index=True)
+    file_path = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    issue_class = Column(String, nullable=True)
+    rule_id = Column(String, nullable=True)
+    cwe_id = Column(String, nullable=True)
+    severity = Column(String, nullable=False)
+    line_number = Column(Integer, nullable=False, default=1)
+    source_tools = Column(Text, nullable=False, default="[]")  # JSON text list e.g. ["bandit", "semgrep"]
+    vulnerability_id = Column(UUID(as_uuid=True), nullable=True)
+    package_name = Column(String, nullable=True)
+    package_version = Column(String, nullable=True)
+    fixed_by_apply_fix = Column(Boolean, default=False)
+
+    scan = relationship("ScanHistory", back_populates="scan_findings")
+    project = relationship("Project")
 
 
 class PasswordResetToken(Base):

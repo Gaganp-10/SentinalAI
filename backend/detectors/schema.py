@@ -24,6 +24,9 @@ class Finding:
     fix_source: Optional[str] = None
     rule_id: Optional[str] = None
     issue_class: Optional[str] = None
+    package_name: Optional[str] = None
+    package_version: Optional[str] = None
+    ecosystem: Optional[str] = None
 
     def dedup_key(self) -> tuple:
         import os

@@ -51,8 +51,16 @@ can safely generate and apply a real code fix directly to the file.
 - **Honest about limitations** — findings without a safe, unambiguous
   fix are clearly marked as requiring manual review rather than guessing
 - **Google Sign-In** alongside standard email/password auth
+- **Scan Comparison and Regression Detection** — historical snapshotting per scan (`ScanFinding`) with stable SHA-256 fingerprints across line shifts and whitespace. Compares any scan against its predecessor or specified baseline to report:
+  - **New**: in the current scan, not in the base scan, and never seen in any retained earlier scan
+  - **Regressed**: in the current scan, not in the base scan, but seen in an earlier retained scan (present, disappeared, and came back)
+  - **Resolved**: in the base scan, not in the current scan, and comparable under honesty rules (attributed with "resolved via apply-fix" when fixed automatically)
+  - **Persisting**: in both scans (tracks version changes for dependencies without breaking fingerprint continuity)
+  - **Not Comparable**: findings that cannot honestly be claimed as resolved because a detector failed or did not run (e.g. Semgrep or OSV failure), or the target file was removed from the project
+  - **Retention Window**: snapshots are maintained for the 20 most recent completed scans per project, pruning older ones automatically
+  - **Fingerprint Limitation**: renaming a variable or altering the flagged line itself generates a new fingerprint, registering as 1 resolved and 1 new finding
 - **Dashboard visualizations** — per-project security score, severity
-  breakdown, scan history timeline, and a codebase-wide vulnerability map
+  breakdown, scan history timeline, interactive "What changed" scan diff panel, and a codebase-wide vulnerability map
 - **Report export** — PDF, HTML, JSON, and CSV
 
 ## Tech Stack

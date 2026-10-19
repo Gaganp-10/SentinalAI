@@ -410,6 +410,15 @@ def apply_vulnerability_fix(
     if not vuln.fix_source:
         vuln.fix_source = "template"
 
+    # Flag corresponding ScanFinding snapshot as fixed via SentinelAI apply-fix
+    try:
+        from backend.models.models import ScanFinding
+        db.query(ScanFinding).filter(ScanFinding.vulnerability_id == vuln.id).update(
+            {"fixed_by_apply_fix": True}, synchronize_session=False
+        )
+    except Exception as sf_err:
+        logger.warning(f"Could not flag ScanFinding as fixed_by_apply_fix: {sf_err}")
+
     db.commit()
     db.refresh(vuln)
     db.refresh(vuln.file)

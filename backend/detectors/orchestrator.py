@@ -41,9 +41,11 @@ class Orchestrator:
         self.semgrep = SemgrepDetector()
         self.ast = ASTDetector()
         self.warnings: List[str] = []
+        self.engines_run: List[str] = []
 
     def scan_project(self, project_dir: str) -> List[Finding]:
         self.warnings = []
+        self.engines_run = []
         # 1. Detect languages present in the project
         languages: Set[str] = set()
         file_count = 0
@@ -64,6 +66,7 @@ class Orchestrator:
             logger.info("Running Bandit linter...")
             try:
                 raw_findings.extend(self.bandit.scan(project_dir))
+                self.engines_run.append("bandit")
             except Exception as e:
                 warn_msg = f"Bandit scan failed: {e}"
                 logger.warning(warn_msg)
@@ -72,6 +75,7 @@ class Orchestrator:
             logger.info("Running Custom AST linter...")
             try:
                 raw_findings.extend(self.ast.scan(project_dir))
+                self.engines_run.append("ast")
             except Exception as e:
                 warn_msg = f"AST scan failed: {e}"
                 logger.warning(warn_msg)
@@ -83,6 +87,7 @@ class Orchestrator:
             logger.info("Running Semgrep scanner...")
             try:
                 raw_findings.extend(self.semgrep.scan(project_dir))
+                self.engines_run.append("semgrep")
             except DetectorError as e:
                 warn_msg = f"Semgrep scan failed: {e}"
                 logger.warning(warn_msg)

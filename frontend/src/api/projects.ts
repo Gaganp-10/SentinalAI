@@ -61,3 +61,60 @@ export function formatScanDate(value?: string | null): string {
   if (Number.isNaN(date.getTime())) return "No scans yet";
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
+
+export type DiffFindingItem = {
+  id: string;
+  file: string;
+  line: number;
+  type: string;
+  severity: string;
+  cwe?: string | null;
+  source_tools?: string[];
+  vulnerability_id?: string | null;
+  package_name?: string | null;
+  old_version?: string | null;
+  new_version?: string | null;
+  note?: string | null;
+  reason?: string | null;
+};
+
+export type ScanDiffResponse = {
+  baseline?: boolean;
+  scan_id?: string;
+  base_scan_id?: string;
+  summary?: {
+    new: number;
+    resolved: number;
+    persisting: number;
+    regressed: number;
+    not_comparable: number;
+  };
+  score_before?: number;
+  score_after?: number;
+  severity_delta?: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  items?: {
+    new: DiffFindingItem[];
+    resolved: DiffFindingItem[];
+    persisting: DiffFindingItem[];
+    regressed: DiffFindingItem[];
+    not_comparable: DiffFindingItem[];
+  };
+  notes?: string[];
+};
+
+export async function getScanDiff(
+  projectId: string,
+  scanId: string,
+  baseId?: string
+): Promise<ScanDiffResponse> {
+  const url = baseId
+    ? `/api/projects/${projectId}/scans/${scanId}/diff?base=${baseId}`
+    : `/api/projects/${projectId}/scans/${scanId}/diff`;
+  const { data } = await apiClient.get<ScanDiffResponse>(url);
+  return data;
+}

@@ -31,6 +31,15 @@ def run_db_migrations(engine):
                 if "dependency_summary" not in scan_cols:
                     conn.execute(text("ALTER TABLE scan_history ADD COLUMN dependency_summary TEXT"))
                     conn.commit()
+                if "engines_run" not in scan_cols:
+                    conn.execute(text("ALTER TABLE scan_history ADD COLUMN engines_run TEXT"))
+                    conn.commit()
+
+            if "scan_findings" in tables:
+                sf_cols = [col["name"] for col in inspector.get_columns("scan_findings")]
+                if "fixed_by_apply_fix" not in sf_cols:
+                    conn.execute(text("ALTER TABLE scan_findings ADD COLUMN fixed_by_apply_fix BOOLEAN DEFAULT FALSE"))
+                    conn.commit()
         logger.info("Database migrations executed successfully.")
     except Exception as e:
         logger.error(f"Error executing database migrations: {e}")

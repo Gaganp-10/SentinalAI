@@ -60,6 +60,7 @@ class SemgrepDetector:
             "--exclude=pom.xml",
             "--metrics=off",
             "--disable-version-check",
+            "--no-git-ignore",
             "--timeout=10",
             "--json",
             "--quiet",
@@ -71,6 +72,8 @@ class SemgrepDetector:
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False
             )
 
