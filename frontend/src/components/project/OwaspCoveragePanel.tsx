@@ -1,4 +1,4 @@
-﻿import { useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { ShieldCheck, ShieldAlert, ShieldOff, AlertCircle, Info } from "lucide-react";
 import { getOwaspCoverage, type OwaspCategory } from "../../api/owasp";
@@ -192,14 +192,14 @@ export function OwaspCoveragePanel({ projectId }: { projectId: string }) {
       )}
 
       {/* No completed scan yet */}
-      {data && data.categories.every((c) => c.open + c.fixed === 0) && (
+      {data?.categories && data.categories.every((c) => c.open + c.fixed === 0) && (
         <p className="mt-4 text-[13px] text-muted-foreground">
           Run a scan to see OWASP coverage results.
         </p>
       )}
 
       {/* Category list */}
-      {data && (
+      {data?.categories && (
         <ul className="mt-4 space-y-2">
           {data.categories.map((cat, i) => (
             <CategoryRow key={cat.id} cat={cat} index={i} />
