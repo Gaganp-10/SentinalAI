@@ -58,6 +58,16 @@ function ProjectDetailPage() {
   const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const [finishedScan, setFinishedScan] = useState<ScanHistory | undefined>(undefined);
   const [diffScanId, setDiffScanId] = useState<string | null>(null);
+  const [diffBaseId, setDiffBaseId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as any).__setDiff = (scanId: string | null, baseId: string | null = null) => {
+        setDiffScanId(scanId);
+        setDiffBaseId(baseId);
+      };
+    }
+  }, []);
 
   const me = useQuery({ queryKey: ["auth", "me"], queryFn: getCurrentUser, retry: false });
   const project = useQuery({
@@ -94,8 +104,8 @@ function ProjectDetailPage() {
   });
 
   const diffQuery = useQuery({
-    queryKey: ["projects", projectId, "scans", diffScanId, "diff"],
-    queryFn: () => getScanDiff(projectId, diffScanId as string),
+    queryKey: ["projects", projectId, "scans", diffScanId, "diff", diffBaseId],
+    queryFn: () => getScanDiff(projectId, diffScanId as string, diffBaseId || undefined),
     enabled: Boolean(diffScanId),
     retry: false,
   });

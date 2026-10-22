@@ -59,6 +59,7 @@ export function ScanHistoryList({
             return (
               <li
                 key={String(scan.id)}
+                data-scan-id={String(scan.id)}
                 className={`glass-field flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[18px] px-4 py-3 transition-colors ${
                   isActive ? "border-primary/40 bg-primary/[0.04]" : ""
                 }`}
@@ -74,6 +75,7 @@ export function ScanHistoryList({
                   {isCompleted && onCompare && (
                     <button
                       type="button"
+                      data-testid={`compare-${String(scan.id)}`}
                       onClick={() => onCompare(String(scan.id))}
                       className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium transition-all border ${
                         isActive
