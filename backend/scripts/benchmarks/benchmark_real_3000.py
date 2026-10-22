@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker

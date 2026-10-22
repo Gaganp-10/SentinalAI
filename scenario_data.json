@@ -1,0 +1,224 @@
+{
+  "user": "scenario_user_03867e",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTMzNTkzMTAsInN1YiI6ImM0NDY1MThiLTkxMjQtNGFmYy1iNWUwLTY5MDI3MjkwMTE0YyJ9.YJS3mmaDjnL20XCJgon-xgcUYucLDA99zTVREVOiN9M",
+  "project_id": "55f3e6cb-7e24-43c8-84b3-536500c47501",
+  "scan1_id": "d353decb-284f-49b4-852e-62127eede28c",
+  "scan2_id": "24121489-769f-4fe2-ba74-3aa8d25219fa",
+  "scan3_id": "8e5041c7-eeac-49bd-b89f-2a290dfc5328",
+  "scan4_id": "7d5ebbfa-bed4-4ad5-a822-81114733a94b",
+  "diff2d_json": {
+    "scan_id": "7d5ebbfa-bed4-4ad5-a822-81114733a94b",
+    "base_scan_id": "d353decb-284f-49b4-852e-62127eede28c",
+    "summary": {
+      "new": 2,
+      "resolved": 3,
+      "persisting": 7,
+      "regressed": 1,
+      "not_comparable": 1
+    },
+    "score_before": 31,
+    "score_after": null,
+    "severity_delta": null,
+    "items": {
+      "new": [
+        {
+          "id": "82f6f058-2faf-4d61-ba1f-ae2e065460e2",
+          "file": "vulnerable_sample.py",
+          "line": 33,
+          "type": "subprocess_popen_with_shell_equals_true",
+          "severity": "high",
+          "cwe": "CWE-78",
+          "source_tools": [
+            "bandit"
+          ],
+          "vulnerability_id": null
+        },
+        {
+          "id": "98023ce8-8b9d-45b9-bf56-f753ccee4ab4",
+          "file": "vulnerable_sample.py",
+          "line": 38,
+          "type": "blacklist",
+          "severity": "medium",
+          "cwe": "CWE-502",
+          "source_tools": [
+            "bandit"
+          ],
+          "vulnerability_id": null
+        }
+      ],
+      "resolved": [
+        {
+          "id": "807135e1-c553-4202-ab36-8ec1bb8f0d15",
+          "file": "vulnerable_sample.py",
+          "line": 32,
+          "type": "Python Subprocess Shell",
+          "severity": "high",
+          "cwe": "CWE-78",
+          "source_tools": [
+            "bandit",
+            "semgrep"
+          ],
+          "vulnerability_id": "34661832-ba94-4398-b968-9669fada922c"
+        },
+        {
+          "id": "d4e2fd05-73ae-418c-bc39-9ecb3b9bda8c",
+          "file": "vulnerable_sample.py",
+          "line": 37,
+          "type": "Python Pickle Loads",
+          "severity": "high",
+          "cwe": "CWE-502",
+          "source_tools": [
+            "bandit",
+            "semgrep"
+          ],
+          "vulnerability_id": "7ad7621e-f4ae-4177-9b59-b5159a0a9849"
+        },
+        {
+          "id": "ac73c5ee-26fb-4c4d-a70e-4c40816b2a7e",
+          "file": "vulnerable_sample.py",
+          "line": 18,
+          "type": "Hardcoded Secret",
+          "severity": "high",
+          "cwe": "CWE-798",
+          "source_tools": [
+            "ast",
+            "bandit"
+          ],
+          "vulnerability_id": "ff51637a-6608-493b-bf4d-1cf03dca067e",
+          "note": "resolved via apply-fix"
+        }
+      ],
+      "persisting": [
+        {
+          "id": "264e56e8-95ca-4e93-8acb-c26a884c88c4",
+          "file": "vulnerable_sample.py",
+          "line": 15,
+          "type": "blacklist",
+          "severity": "low",
+          "cwe": "CWE-78",
+          "source_tools": [
+            "bandit"
+          ],
+          "vulnerability_id": null
+        },
+        {
+          "id": "f71f233a-f064-41d3-af2d-cc3f6e43b9d0",
+          "file": "vulnerable_sample.py",
+          "line": 16,
+          "type": "blacklist",
+          "severity": "low",
+          "cwe": "CWE-502",
+          "source_tools": [
+            "bandit"
+          ],
+          "vulnerability_id": null
+        },
+        {
+          "id": "bc94d831-2bff-4765-919c-971fe92a65bb",
+          "file": "vulnerable_sample.py",
+          "line": 26,
+          "type": "hardcoded_sql_expressions",
+          "severity": "medium",
+          "cwe": "CWE-89",
+          "source_tools": [
+            "bandit"
+          ],
+          "vulnerability_id": null
+        },
+        {
+          "id": "48e5af0a-2504-4bd5-b6e0-bcca56fd5c3a",
+          "file": "vulnerable_sample.py",
+          "line": 43,
+          "type": "Weak Hashing Algorithm",
+          "severity": "high",
+          "cwe": "CWE-328",
+          "source_tools": [
+            "ast",
+            "bandit"
+          ],
+          "vulnerability_id": null
+        },
+        {
+          "id": "786bd09e-029a-4d77-9cd5-f803e873b4c4",
+          "file": "package.json",
+          "line": 1,
+          "type": "vulnerable_dependency",
+          "severity": "high",
+          "cwe": "CWE-1333",
+          "source_tools": [
+            "osv"
+          ],
+          "vulnerability_id": null,
+          "package_name": "lodash",
+          "old_version": "4.17.15",
+          "new_version": "4.17.15"
+        },
+        {
+          "id": "3a653fda-9a52-4231-ae39-271e5039e8aa",
+          "file": "requirements.txt",
+          "line": 1,
+          "type": "vulnerable_dependency",
+          "severity": "high",
+          "cwe": "CWE-522",
+          "source_tools": [
+            "osv"
+          ],
+          "vulnerability_id": null,
+          "package_name": "requests",
+          "old_version": "2.6.0",
+          "new_version": "2.6.0"
+        },
+        {
+          "id": "94406663-69cc-410b-81aa-07dc4a91929c",
+          "file": "requirements.txt",
+          "line": 2,
+          "type": "vulnerable_dependency",
+          "severity": "high",
+          "cwe": "CWE-409",
+          "source_tools": [
+            "osv"
+          ],
+          "vulnerability_id": null,
+          "package_name": "urllib3",
+          "old_version": "1.24.1",
+          "new_version": "1.24.1"
+        }
+      ],
+      "regressed": [
+        {
+          "id": "75264193-00ae-4d98-8926-a6e405cafd3b",
+          "file": "new_module.py",
+          "line": 5,
+          "type": "SQL Injection",
+          "severity": "critical",
+          "cwe": "CWE-89",
+          "source_tools": [
+            "ast",
+            "bandit"
+          ],
+          "vulnerability_id": null,
+          "note": "Finding re-appeared after being fixed or absent in base scan"
+        }
+      ],
+      "not_comparable": [
+        {
+          "id": "74931826-aae0-47e0-9ed1-2b0dbd8e116d",
+          "file": "utils.js",
+          "line": 4,
+          "type": "Js Eval",
+          "severity": "high",
+          "cwe": "CWE-95",
+          "source_tools": [
+            "semgrep"
+          ],
+          "vulnerability_id": "6aef59cc-4559-4b05-bfec-83bfd8ecd1cd",
+          "reason": "detector did not run or failed in current scan (semgrep)"
+        }
+      ]
+    },
+    "notes": [
+      "Semgrep did not run in this scan; 1 finding(s) not comparable.",
+      "Score and severity deltas withheld: 1 finding(s) not comparable (detector failed, file not scanned/removed, or capped scan). Deltas cannot be accurately evaluated."
+    ]
+  }
+}

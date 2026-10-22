@@ -90,6 +90,7 @@ class ScanHistory(Base):
     warnings = Column(Text, nullable=True)  # JSON-encoded list of warning strings
     dependency_summary = Column(Text, nullable=True)  # JSON-encoded dict: {"checked": N, "not_checked": M, "manifests": K}
     engines_run = Column(Text, nullable=True)  # JSON-encoded list of engine names: ["bandit", "ast", "semgrep", "osv"]
+    scanned_files = Column(Text, nullable=True)  # JSON-encoded list of relative filepaths covered in this scan
 
     project = relationship("Project", back_populates="scan_histories")
     scan_findings = relationship("ScanFinding", back_populates="scan", cascade="all, delete-orphan", passive_deletes=True)

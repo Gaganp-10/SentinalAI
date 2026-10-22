@@ -129,6 +129,10 @@ export function OwaspCoveragePanel({ projectId }: { projectId: string }) {
     staleTime: 30_000,
   });
 
+  const categories = data && typeof data === "object" && Array.isArray(data.categories) ? data.categories : null;
+  const hasUnmapped = data && typeof data === "object" && typeof data.unmapped_findings === "number" && data.unmapped_findings > 0;
+  const isAllZero = categories !== null && categories.every((c) => (c.open || 0) + (c.fixed || 0) === 0);
+
   return (
     <motion.section
       initial={{ opacity: 0, y: 16 }}
@@ -148,9 +152,9 @@ export function OwaspCoveragePanel({ projectId }: { projectId: string }) {
           </p>
         </div>
 
-        {data && (
+        {data && typeof data === "object" && (
           <div className="flex shrink-0 flex-col items-end gap-0.5">
-            {data.unmapped_findings > 0 && (
+            {hasUnmapped && (
               <span className="flex items-center gap-1 text-[11.5px] text-muted-foreground">
                 <Info className="size-[12px]" />
                 {data.unmapped_findings} unmapped finding{data.unmapped_findings !== 1 ? "s" : ""}
@@ -169,7 +173,7 @@ export function OwaspCoveragePanel({ projectId }: { projectId: string }) {
       </div>
 
       {/* Legend */}
-      {data && <Legend />}
+      {categories && <Legend />}
 
       {/* Loading */}
       {isLoading && (
@@ -192,16 +196,16 @@ export function OwaspCoveragePanel({ projectId }: { projectId: string }) {
       )}
 
       {/* No completed scan yet */}
-      {data?.categories && data.categories.every((c) => c.open + c.fixed === 0) && (
+      {isAllZero && (
         <p className="mt-4 text-[13px] text-muted-foreground">
           Run a scan to see OWASP coverage results.
         </p>
       )}
 
       {/* Category list */}
-      {data?.categories && (
+      {categories && (
         <ul className="mt-4 space-y-2">
-          {data.categories.map((cat, i) => (
+          {categories.map((cat, i) => (
             <CategoryRow key={cat.id} cat={cat} index={i} />
           ))}
         </ul>

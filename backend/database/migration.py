@@ -34,6 +34,9 @@ def run_db_migrations(engine):
                 if "engines_run" not in scan_cols:
                     conn.execute(text("ALTER TABLE scan_history ADD COLUMN engines_run TEXT"))
                     conn.commit()
+                if "scanned_files" not in scan_cols:
+                    conn.execute(text("ALTER TABLE scan_history ADD COLUMN scanned_files TEXT"))
+                    conn.commit()
 
             if "scan_findings" in tables:
                 sf_cols = [col["name"] for col in inspector.get_columns("scan_findings")]

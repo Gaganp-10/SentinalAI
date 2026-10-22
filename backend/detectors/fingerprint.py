@@ -5,6 +5,9 @@ from typing import List, Optional
 from backend.detectors.schema import Finding
 
 
+from backend.detectors.issue_classes import get_issue_class
+
+
 def normalize_snippet(snippet: Optional[str]) -> str:
     """
     Normalizes a code snippet for stable fingerprinting.
@@ -45,8 +48,9 @@ def compute_code_fingerprint(
     Renaming a variable or changing the flagged line itself changes the
     fingerprint, so it shows as one new and one resolved finding.
     """
-    norm_path = os.path.normpath(file_path).replace("\\", "/").strip().lower()
-    norm_type = (issue_class or finding_type or "").strip().lower()
+    norm_path = os.path.normpath(file_path).replace("\\", "/").strip()
+    resolved_class = issue_class or get_issue_class(finding_type)
+    norm_type = (resolved_class or finding_type or "").strip().lower()
     norm_code = normalize_snippet(code_snippet)
 
     raw_key = f"{norm_path}|{norm_type}|{norm_code}"
@@ -70,7 +74,7 @@ def compute_dependency_fingerprint(
     version counts as persisting, and downgrading later can be detected as a
     regression.
     """
-    norm_manifest = os.path.normpath(manifest_path).replace("\\", "/").strip().lower()
+    norm_manifest = os.path.normpath(manifest_path).replace("\\", "/").strip()
     norm_eco = (ecosystem or "").strip().lower()
     norm_pkg = (package_name or "").strip().lower()
 
@@ -103,7 +107,7 @@ def assign_fingerprints(findings: List[Finding]) -> List[str]:
                 code_snippet=f.code_snippet,
                 occurrence_index=1,
             )
-            norm_path = os.path.normpath(f.file_path).replace("\\", "/").strip().lower()
+            norm_path = os.path.normpath(f.file_path).replace("\\", "/").strip()
             key = (norm_path, base_fp)
             count = seen_counts.get(key, 0) + 1
             seen_counts[key] = count

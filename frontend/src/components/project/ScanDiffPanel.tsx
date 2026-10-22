@@ -109,8 +109,8 @@ export function ScanDiffPanel({
   };
 
   const scoreBefore = diff.score_before ?? 0;
-  const scoreAfter = diff.score_after ?? 0;
-  const scoreDiff = scoreAfter - scoreBefore;
+  const isScoreComparable = diff.score_after !== null && diff.score_after !== undefined;
+  const scoreDiff = isScoreComparable ? (diff.score_after! - scoreBefore) : null;
 
   const toggleItem = (id: string) => {
     setExpandedItems((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -183,46 +183,69 @@ export function ScanDiffPanel({
             <div className="mt-1 flex items-baseline gap-2">
               <span className="text-[20px] font-bold text-foreground/80">{scoreBefore}</span>
               <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[22px] font-extrabold text-foreground">{scoreAfter}</span>
+              {isScoreComparable ? (
+                <span className="text-[22px] font-extrabold text-foreground">{diff.score_after}</span>
+              ) : (
+                <span className="text-[14px] font-semibold text-purple-400 uppercase tracking-wide">
+                  not comparable
+                </span>
+              )}
             </div>
           </div>
-          <div
-            className={`rounded-full px-3 py-1 text-[13px] font-semibold border ${
-              scoreDiff > 0
-                ? "bg-[oklch(0.75_0.19_145)]/10 text-[oklch(0.75_0.19_145)] border-[oklch(0.75_0.19_145)]/20"
-                : scoreDiff < 0
-                  ? "bg-destructive/10 text-destructive border-destructive/20"
-                  : "bg-foreground/[0.06] text-muted-foreground border-foreground/[0.08]"
-            }`}
-          >
-            {scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff === 0 ? "No change" : scoreDiff}
-          </div>
+          {isScoreComparable && scoreDiff !== null ? (
+            <div
+              className={`rounded-full px-3 py-1 text-[13px] font-semibold border ${
+                scoreDiff > 0
+                  ? "bg-[oklch(0.75_0.19_145)]/10 text-[oklch(0.75_0.19_145)] border-[oklch(0.75_0.19_145)]/20"
+                  : scoreDiff < 0
+                    ? "bg-destructive/10 text-destructive border-destructive/20"
+                    : "bg-foreground/[0.06] text-muted-foreground border-foreground/[0.08]"
+              }`}
+            >
+              {scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff === 0 ? "No change" : scoreDiff}
+            </div>
+          ) : (
+            <div className="rounded-full px-3 py-1 text-[12px] font-semibold border bg-purple-500/10 text-purple-400 border-purple-500/20">
+              not comparable
+            </div>
+          )}
         </div>
 
         {/* Severity Delta */}
-        <div className="glass-field rounded-[20px] p-4 flex items-center justify-around border border-foreground/[0.06]">
-          {(["critical", "high", "medium", "low"] as const).map((sev) => {
-            const delta = diff.severity_delta?.[sev] ?? 0;
-            return (
-              <div key={sev} className="text-center">
-                <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
-                  {sev}
+        {diff.severity_delta !== null && diff.severity_delta !== undefined ? (
+          <div className="glass-field rounded-[20px] p-4 flex items-center justify-around border border-foreground/[0.06]">
+            {(["critical", "high", "medium", "low"] as const).map((sev) => {
+              const delta = diff.severity_delta?.[sev] ?? 0;
+              return (
+                <div key={sev} className="text-center">
+                  <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+                    {sev}
+                  </div>
+                  <div
+                    className={`mt-1 text-[14px] font-bold ${
+                      delta > 0
+                        ? "text-destructive"
+                        : delta < 0
+                          ? "text-[oklch(0.75_0.19_145)]"
+                          : "text-foreground/70"
+                    }`}
+                  >
+                    {delta > 0 ? `+${delta}` : delta}
+                  </div>
                 </div>
-                <div
-                  className={`mt-1 text-[14px] font-bold ${
-                    delta > 0
-                      ? "text-destructive"
-                      : delta < 0
-                        ? "text-[oklch(0.75_0.19_145)]"
-                        : "text-foreground/70"
-                  }`}
-                >
-                  {delta > 0 ? `+${delta}` : delta}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="glass-field rounded-[20px] p-4 flex flex-col items-center justify-center border border-foreground/[0.06] text-center">
+            <div className="text-[11px] uppercase tracking-[0.06em] text-muted-foreground">
+              Severity Delta
+            </div>
+            <div className="mt-1 text-[14px] font-semibold text-purple-400 uppercase tracking-wide">
+              not comparable
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Category Filter Chips */}

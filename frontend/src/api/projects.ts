@@ -89,14 +89,14 @@ export type ScanDiffResponse = {
     regressed: number;
     not_comparable: number;
   };
-  score_before?: number;
-  score_after?: number;
+  score_before?: number | null;
+  score_after?: number | null;
   severity_delta?: {
     critical: number;
     high: number;
     medium: number;
     low: number;
-  };
+  } | null;
   items?: {
     new: DiffFindingItem[];
     resolved: DiffFindingItem[];

@@ -501,3 +501,249 @@ def test_diff_api_endpoints_and_errors(client, db):
         assert resp_failed.status_code == 400
         assert "failed status" in resp_failed.json()["detail"]
 
+
+def test_fingerprint_identical_across_bandit_semgrep_ast():
+    """
+    Item 1 requirement:
+    Prove that the same shell=True finding yields the exact same fingerprint
+    when reported by:
+    - Bandit only (type='subprocess_popen_with_shell_equals_true', rule_id='B602', issue_class='COMMAND_INJECTION')
+    - Bandit + Semgrep merged (type='Command Injection', rule_id='B602', issue_class='COMMAND_INJECTION')
+    - Semgrep only (type='python-subprocess-shell', rule_id='python-subprocess-shell', issue_class='COMMAND_INJECTION')
+    - AST only (type='Command Injection', rule_id='ast-command-injection', issue_class='COMMAND_INJECTION')
+    - Bandit fallback when issue_class is omitted
+    """
+    file_path = "app.py"
+    code_snippet = "subprocess.Popen(['ls', '-la'], shell=True)"
+
+    # 1. Bandit only
+    fp_bandit = compute_code_fingerprint(
+        file_path=file_path,
+        finding_type="subprocess_popen_with_shell_equals_true",
+        issue_class="COMMAND_INJECTION",
+        code_snippet=f"22: {code_snippet}",
+    )
+
+    # 2. Bandit + Semgrep merged
+    fp_merged = compute_code_fingerprint(
+        file_path=file_path,
+        finding_type="Command Injection",
+        issue_class="COMMAND_INJECTION",
+        code_snippet=code_snippet,
+    )
+
+    # 3. Semgrep only
+    fp_semgrep = compute_code_fingerprint(
+        file_path=file_path,
+        finding_type="python-subprocess-shell",
+        issue_class="COMMAND_INJECTION",
+        code_snippet=code_snippet,
+    )
+
+    # 4. AST only
+    fp_ast = compute_code_fingerprint(
+        file_path=file_path,
+        finding_type="Command Injection",
+        issue_class="COMMAND_INJECTION",
+        code_snippet=code_snippet,
+    )
+
+    # 5. Bandit with test_name fallback when issue_class is omitted
+    fp_bandit_fallback = compute_code_fingerprint(
+        file_path=file_path,
+        finding_type="subprocess_popen_with_shell_equals_true",
+        issue_class=None,
+        code_snippet=code_snippet,
+    )
+
+    assert fp_bandit == fp_merged == fp_semgrep == fp_ast == fp_bandit_fallback, (
+        f"Fingerprints must match identically: bandit={fp_bandit}, merged={fp_merged}, "
+        f"semgrep={fp_semgrep}, ast={fp_ast}, fallback={fp_bandit_fallback}"
+    )
+
+
+def test_score_and_severity_deltas_null_when_not_comparable():
+    """
+    Item 2 requirement:
+    When any finding is not comparable (e.g. detector failed, file removed),
+    score_after and severity_delta must be null (None) to prevent showing
+    an artificial score increase.
+    """
+    db = SessionLocal()
+    project = None
+    try:
+        from backend.detectors.diff import compute_scan_diff
+        user = db.query(User).filter(User.email == "test@example.com").first()
+        if not user:
+            user = User(username="test_user_score_honesty", email="test@example.com", hashed_password="fake")
+            db.add(user)
+            db.commit()
+
+        project = Project(user_id=user.id, project_name=f"Test Score Honesty {uuid.uuid4().hex[:6]}")
+        db.add(project)
+        db.flush()
+
+        # Base scan: semgrep ran, found 1 critical issue
+        base_scan = ScanHistory(
+            project_id=project.id,
+            status="completed",
+            scan_time=datetime.utcnow() - timedelta(hours=2),
+            total_issues=1,
+            critical_count=1,
+            high_count=0,
+            medium_count=0,
+            low_count=0,
+            engines_run=json.dumps(["semgrep", "bandit"]),
+        )
+        db.add(base_scan)
+        db.flush()
+
+        sf_base = ScanFinding(
+            id=uuid.uuid4(),
+            scan_id=base_scan.id,
+            project_id=project.id,
+            fingerprint="fp_eval_injection",
+            file_path="utils.js",
+            line_number=5,
+            type="Code Injection via eval()",
+            severity="critical",
+            source_tools=json.dumps(["semgrep"]),
+        )
+        db.add(sf_base)
+
+        # Target scan: semgrep failed/didn't run -> raw count drops to 0, which would falsely raise score
+        target_scan = ScanHistory(
+            project_id=project.id,
+            status="completed",
+            scan_time=datetime.utcnow() - timedelta(hours=1),
+            total_issues=0,
+            critical_count=0,
+            high_count=0,
+            medium_count=0,
+            low_count=0,
+            engines_run=json.dumps(["bandit"]),
+        )
+        db.add(target_scan)
+        db.commit()
+
+        diff = compute_scan_diff(db, target_scan, base_scan, project)
+
+        assert diff["summary"]["not_comparable"] == 1
+        assert diff["summary"]["resolved"] == 0
+        assert diff["score_after"] is None, "score_after must be null when findings are not comparable"
+        assert diff["severity_delta"] is None, "severity_delta must be null when findings are not comparable"
+        assert any("withheld" in n.lower() or "not comparable" in n.lower() for n in diff["notes"])
+    finally:
+        if project and project.id:
+            db.query(Project).filter(Project.id == project.id).delete()
+            db.commit()
+        db.close()
+
+
+def test_old_diff_immutable_after_files_added_or_removed():
+    """
+    User Requirement:
+    Store which file paths each scan covered and use it for the 'file was scanned' rule.
+    Test: an old diff gives the same result after files are later added or removed.
+    """
+    from backend.detectors.diff import compute_scan_diff
+    from backend.models.models import File
+    db = SessionLocal()
+    project = None
+    try:
+        user = db.query(User).first()
+        project = Project(user_id=user.id, project_name="Per Scan Coverage Test")
+        db.add(project)
+        db.flush()
+
+        # Initial live File table
+        file1 = File(
+            project_id=project.id,
+            filename="app.py",
+            filepath="src/app.py",
+            language="python",
+            size=100
+        )
+        db.add(file1)
+        db.commit()
+
+        base_time = datetime.utcnow() - timedelta(hours=2)
+
+        # Base scan covered src/app.py
+        base_scan = ScanHistory(
+            project_id=project.id,
+            status="completed",
+            scan_time=base_time,
+            engines_run=json.dumps(["bandit"]),
+            scanned_files=json.dumps(["src/app.py"]),
+            total_issues=1,
+            critical_count=1,
+            high_count=0,
+            medium_count=0,
+            low_count=0,
+        )
+        db.add(base_scan)
+        db.flush()
+
+        sf_base = ScanFinding(
+            id=uuid.uuid4(),
+            scan_id=base_scan.id,
+            project_id=project.id,
+            fingerprint="fp_app_py_issue",
+            file_path="src/app.py",
+            line_number=10,
+            type="Hardcoded Secret",
+            severity="critical",
+            source_tools=json.dumps(["bandit"]),
+        )
+        db.add(sf_base)
+
+        # Target scan also covered src/app.py, finding resolved
+        target_scan = ScanHistory(
+            project_id=project.id,
+            status="completed",
+            scan_time=base_time + timedelta(hours=1),
+            engines_run=json.dumps(["bandit"]),
+            scanned_files=json.dumps(["src/app.py"]),
+            total_issues=0,
+            critical_count=0,
+            high_count=0,
+            medium_count=0,
+            low_count=0,
+        )
+        db.add(target_scan)
+        db.commit()
+
+        # 1. Compute original diff
+        diff_before = compute_scan_diff(db, target_scan, base_scan, project)
+        assert diff_before["summary"]["resolved"] == 1
+        assert diff_before["summary"]["not_comparable"] == 0
+
+        # 2. Later: User removes src/app.py and adds another file in File table
+        db.query(File).filter(File.project_id == project.id).delete()
+        file2 = File(
+            project_id=project.id,
+            filename="other.py",
+            filepath="src/other.py",
+            language="python",
+            size=200
+        )
+        db.add(file2)
+        db.commit()
+
+        # 3. Recompute historical diff
+        diff_after = compute_scan_diff(db, target_scan, base_scan, project)
+
+        # Must be strictly identical because target_scan.scanned_files recorded src/app.py was scanned!
+        assert diff_after["summary"] == diff_before["summary"], "Diff summary must be immutable to subsequent file changes"
+        assert diff_after["summary"]["resolved"] == 1
+        assert diff_after["summary"]["not_comparable"] == 0
+        assert diff_after["score_after"] == diff_before["score_after"]
+    finally:
+        if project and project.id:
+            db.query(Project).filter(Project.id == project.id).delete()
+            db.commit()
+        db.close()
+
+
+

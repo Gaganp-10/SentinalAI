@@ -68,11 +68,19 @@ RULE_TO_ISSUE_CLASS: Dict[str, str] = {
     "B609": "COMMAND_INJECTION",
     "B404": "COMMAND_INJECTION",
     "subprocess_popen_with_shell_equals_true": "COMMAND_INJECTION",
+    "subprocess_run_with_shell_equals_true": "COMMAND_INJECTION",
+    "start_process_with_a_shell": "COMMAND_INJECTION",
+    "start_process_with_no_shell": "COMMAND_INJECTION",
+    "start_process_with_partial_path": "COMMAND_INJECTION",
+    "subprocess_without_shell_equals_true": "COMMAND_INJECTION",
+    "any_other_function_with_shell_equals_true": "COMMAND_INJECTION",
 
     "B105": "HARDCODED_CREDENTIAL",
     "B106": "HARDCODED_CREDENTIAL",
     "B107": "HARDCODED_CREDENTIAL",
     "hardcoded_password_string": "HARDCODED_CREDENTIAL",
+    "hardcoded_password_funcarg": "HARDCODED_CREDENTIAL",
+    "hardcoded_password_default": "HARDCODED_CREDENTIAL",
 
     "B303": "WEAK_HASH",
     "B304": "WEAK_HASH",
@@ -84,6 +92,7 @@ RULE_TO_ISSUE_CLASS: Dict[str, str] = {
     "B307": "CODE_INJECTION",
     "B102": "CODE_INJECTION",
     "eval": "CODE_INJECTION",
+    "exec": "CODE_INJECTION",
 
     "B301": "INSECURE_DESERIALIZATION",
     "B302": "INSECURE_DESERIALIZATION",
@@ -125,6 +134,9 @@ RULE_TO_ISSUE_CLASS: Dict[str, str] = {
 
     "ast-eval": "CODE_INJECTION",
     "Dangerous Function Execution": "CODE_INJECTION",
+
+    "ast-command-injection": "COMMAND_INJECTION",
+    "Command Injection": "COMMAND_INJECTION",
 }
 
 

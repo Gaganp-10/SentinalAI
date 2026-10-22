@@ -16,3 +16,6 @@ frontend/dist/
 **/__pycache__/
 *.db
 scratch/
+backend/scratch/
+backend/scripts/setup_ui_demo.py
+backend/scripts/step8_evidence.py

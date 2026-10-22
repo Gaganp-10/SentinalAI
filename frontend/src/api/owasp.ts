@@ -1,4 +1,4 @@
-﻿import { apiClient } from "./client";
+import { apiClient } from "./client";
 
 export interface OwaspCategory {
   id: string;        // e.g. "A03"
@@ -17,6 +17,6 @@ export interface OwaspCoverage {
 }
 
 export async function getOwaspCoverage(projectId: string): Promise<OwaspCoverage> {
-  const res = await apiClient.get<OwaspCoverage>(`/projects/${projectId}/owasp`);
+  const res = await apiClient.get<OwaspCoverage>(`/api/projects/${projectId}/owasp`);
   return res.data;
 }

@@ -175,6 +175,18 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
             if dep_summary.get("failed", 0) == 0 or dep_summary.get("checked", 0) > 0:
                 engines_run.append("osv")
             
+        # Collect per-scan file coverage (exact paths, normalized separators, no .lower())
+        scanned_files_set = set()
+        if os.path.exists(project_dir):
+            for root, _, files in os.walk(project_dir):
+                for file in files:
+                    rel_p = os.path.relpath(os.path.join(root, file), project_dir).replace("\\", "/")
+                    scanned_files_set.add(rel_p)
+        for pf in project_files:
+            if pf.filepath:
+                scanned_files_set.add(os.path.normpath(pf.filepath).replace("\\", "/"))
+        scanned_files_list = sorted(list(scanned_files_set))
+
         # 6. Finalize scan metadata
         scan.total_issues = len(all_findings)
         scan.critical_count = critical_count
@@ -184,6 +196,7 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
         scan.warnings = json.dumps(all_warnings) if all_warnings else None
         scan.dependency_summary = json.dumps(dep_summary) if dep_summary else None
         scan.engines_run = json.dumps(engines_run)
+        scan.scanned_files = json.dumps(scanned_files_list)
         scan.status = "completed"
         
         # Update parent project date

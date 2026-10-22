@@ -120,11 +120,22 @@ def compute_scan_diff(
             )
             seen_earlier_fps = {r[0] for r in seen_rows}
 
-    # 3. Active project files for the 'file was scanned' honesty rule
-    active_files = {
-        os.path.normpath(f.filepath).replace("\\", "/").lower()
-        for f in db.query(File.filepath).filter(File.project_id == project.id).all()
-    }
+    # 3. Target scan file coverage for the 'file was scanned' honesty rule
+    target_scanned_files: Set[str] = set()
+    if target_scan.scanned_files:
+        try:
+            target_scanned_files = {
+                os.path.normpath(p).replace("\\", "/")
+                for p in json.loads(target_scan.scanned_files)
+            }
+        except Exception:
+            pass
+    if not target_scanned_files:
+        # Fallback to File table only when scanned_files column was not populated (legacy)
+        target_scanned_files = {
+            os.path.normpath(f.filepath).replace("\\", "/")
+            for f in db.query(File.filepath).filter(File.project_id == project.id).all()
+        }
 
     # 4. Engine run lists for the detector honesty rule
     target_engines: Set[str] = set()
@@ -187,16 +198,16 @@ def compute_scan_diff(
         if fp in target_by_fp:
             continue
 
-        norm_path = os.path.normpath(bf.file_path).replace("\\", "/").lower()
+        norm_path = os.path.normpath(bf.file_path).replace("\\", "/")
 
-        # Honesty Rule 2: File is no longer part of project
-        if norm_path not in active_files:
+        # Honesty Rule 2: File was not covered in target scan
+        if norm_path not in target_scanned_files:
             removed_file_count += 1
             items_not_comparable.append(
                 format_finding_item(
                     bf,
                     old_version=bf.package_version,
-                    reason="file not scanned (file removed from project)",
+                    reason="file not scanned (file removed from project or skipped)",
                 )
             )
             continue
@@ -261,19 +272,28 @@ def compute_scan_diff(
         base_scan.medium_count,
         base_scan.low_count,
     )
-    score_after = calculate_security_score(
-        target_scan.critical_count,
-        target_scan.high_count,
-        target_scan.medium_count,
-        target_scan.low_count,
-    )
 
-    severity_delta = {
-        "critical": (target_scan.critical_count or 0) - (base_scan.critical_count or 0),
-        "high": (target_scan.high_count or 0) - (base_scan.high_count or 0),
-        "medium": (target_scan.medium_count or 0) - (base_scan.medium_count or 0),
-        "low": (target_scan.low_count or 0) - (base_scan.low_count or 0),
-    }
+    if len(items_not_comparable) > 0:
+        score_after = None
+        severity_delta = None
+        notes.append(
+            f"Score and severity deltas withheld: {len(items_not_comparable)} finding(s) not comparable "
+            f"(detector failed, file not scanned/removed, or capped scan). Deltas cannot be accurately evaluated."
+        )
+    else:
+        score_after = calculate_security_score(
+            target_scan.critical_count,
+            target_scan.high_count,
+            target_scan.medium_count,
+            target_scan.low_count,
+        )
+
+        severity_delta = {
+            "critical": (target_scan.critical_count or 0) - (base_scan.critical_count or 0),
+            "high": (target_scan.high_count or 0) - (base_scan.high_count or 0),
+            "medium": (target_scan.medium_count or 0) - (base_scan.medium_count or 0),
+            "low": (target_scan.low_count or 0) - (base_scan.low_count or 0),
+        }
 
     summary = {
         "new": len(items_new),

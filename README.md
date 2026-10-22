@@ -306,3 +306,13 @@ and rollback safeguards, are comprehensively covered by automated unit and
 integration tests (`backend/tests/test_runtime_fix_correctness.py`,
 `backend/tests/test_step6.py`, `backend/tests/test_issue_classes_dedup.py`,
 and `backend/tests/test_step7.py` for SCA/dependency scanning).
+
+## Performance Benchmarking
+
+To benchmark scan snapshotting and diff computation performance across a large project (3,000 files):
+
+```bash
+python backend/scripts/benchmarks/benchmark_real_3000.py
+```
+
+*Note: The benchmark uses an isolated, ephemeral in-memory SQLite database (`sqlite:///:memory:`). It does not create or persist any users, database credentials, or disk artifacts in your application database.*
