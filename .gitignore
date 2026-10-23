@@ -12,10 +12,13 @@ node_modules/
 frontend/node_modules/
 frontend/dist/
 .gemini/
-*.pyc
 **/__pycache__/
 *.db
 scratch/
 backend/scratch/
 backend/scripts/setup_ui_demo.py
 backend/scripts/step8_evidence.py
+# ── IMPORTANT: do NOT add vulnerable_*.py or temp_*.py here ──────────────────
+# sample-vulnerable-code/vulnerable_sample.py is a tracked test fixture.
+# backend/scripts/benchmarks/benchmark_real_3000.py is a tracked benchmark.
+# A wildcard like vulnerable_*.py would hide both from git.
