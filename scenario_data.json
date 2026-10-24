@@ -1,14 +1,14 @@
 {
-  "user": "scenario_user_df7a82",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTMzODI0OTYsInN1YiI6ImZjMDZiODI3LWMwNGQtNDg5OC1iMTc4LTY0NmU0OWFmNTQ0OSJ9.0ThUgoRTtec4sA3UZyGNpCMuOPXuCijSDrLCUfkm8G4",
-  "project_id": "164ae313-73c2-438b-86b3-3532f4c4720d",
-  "scan1_id": "3d712cbe-8e0d-4b32-8843-276214122330",
-  "scan2_id": "d45ba2fe-1a51-4efd-8be6-d014585d2ca1",
-  "scan3_id": "4d9e6974-0c2a-430f-898d-76d6b361911a",
-  "scan4_id": "015175e2-d0d0-4816-bbd8-03978c8bc77c",
+  "user": "scenario_user_cbe803",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3OTM0MzYxNzAsInN1YiI6IjFlMTAwNmVjLTY2NmYtNGJkMC05MTU2LWRjZGUwMDQzZmRmYyJ9.lfN6LMBGnsh9CH8ig86F87jHHE7hADifmIv1qmYKgTU",
+  "project_id": "28519a15-26f6-49b1-b0cc-85fbc44ffb12",
+  "scan1_id": "5600029f-4c77-4fb7-a7f8-7bb2a5ae88dc",
+  "scan2_id": "6af516df-1192-4c43-81c3-4dbd3a12f056",
+  "scan3_id": "65cde782-69c3-4d10-ac2a-e2b663642551",
+  "scan4_id": "95f23bb7-4e35-4358-bce2-96671f11b0ba",
   "diff2d_json": {
-    "scan_id": "015175e2-d0d0-4816-bbd8-03978c8bc77c",
-    "base_scan_id": "3d712cbe-8e0d-4b32-8843-276214122330",
+    "scan_id": "95f23bb7-4e35-4358-bce2-96671f11b0ba",
+    "base_scan_id": "5600029f-4c77-4fb7-a7f8-7bb2a5ae88dc",
     "summary": {
       "new": 2,
       "resolved": 3,
@@ -22,7 +22,7 @@
     "items": {
       "new": [
         {
-          "id": "98ff8398-3a15-44ac-891a-ae82c10d130d",
+          "id": "c8ac7ff2-81c0-4ee6-8ca8-3c49554281b8",
           "file": "vulnerable_sample.py",
           "line": 33,
           "type": "subprocess_popen_with_shell_equals_true",
@@ -34,7 +34,7 @@
           "vulnerability_id": null
         },
         {
-          "id": "8cee5082-398f-4b9f-94b6-1bc034493db0",
+          "id": "14ac6ebd-f30d-4ddb-a640-715aa2ee4ad8",
           "file": "vulnerable_sample.py",
           "line": 38,
           "type": "blacklist",
@@ -48,21 +48,7 @@
       ],
       "resolved": [
         {
-          "id": "9564ffbc-a84e-46b3-98d2-5251e32f2010",
-          "file": "vulnerable_sample.py",
-          "line": 18,
-          "type": "Hardcoded Secret",
-          "severity": "high",
-          "cwe": "CWE-798",
-          "source_tools": [
-            "ast",
-            "bandit"
-          ],
-          "vulnerability_id": "4b99e250-fd28-4377-ace0-7a969d67dcc8",
-          "note": "resolved via apply-fix"
-        },
-        {
-          "id": "285d1d9f-3461-450c-8015-e0d157f83b84",
+          "id": "7bbec52c-7bb4-4652-9225-ffbc5503d71e",
           "file": "vulnerable_sample.py",
           "line": 32,
           "type": "Python Subprocess Shell",
@@ -72,10 +58,10 @@
             "bandit",
             "semgrep"
           ],
-          "vulnerability_id": "410a9699-dea4-4387-ba19-7428235fa735"
+          "vulnerability_id": "d03705fc-0f82-435a-a79f-74217b5c976a"
         },
         {
-          "id": "3ff65167-e6fe-41fe-9950-e8a3dc0d6af3",
+          "id": "70ae9726-43e4-4d9f-946c-0008622ecadc",
           "file": "vulnerable_sample.py",
           "line": 37,
           "type": "Python Pickle Loads",
@@ -85,12 +71,26 @@
             "bandit",
             "semgrep"
           ],
-          "vulnerability_id": "32104215-df7f-4f36-91ce-7c747bcc5c01"
+          "vulnerability_id": "2eee3003-9ae3-4ecc-a16f-b61430674ae5"
+        },
+        {
+          "id": "1a2b5958-5ccd-456f-b2af-f15447fc4b59",
+          "file": "vulnerable_sample.py",
+          "line": 18,
+          "type": "Hardcoded Secret",
+          "severity": "high",
+          "cwe": "CWE-798",
+          "source_tools": [
+            "ast",
+            "bandit"
+          ],
+          "vulnerability_id": "e788cf82-6a1c-4a0a-97fc-1689e19f045c",
+          "note": "resolved via apply-fix"
         }
       ],
       "persisting": [
         {
-          "id": "0a606a52-4cb7-475e-94f2-dea6f1151444",
+          "id": "3516bbd2-3794-4c78-a9cf-e736ef93921b",
           "file": "vulnerable_sample.py",
           "line": 15,
           "type": "blacklist",
@@ -102,7 +102,7 @@
           "vulnerability_id": null
         },
         {
-          "id": "8e150a90-3b03-4a4b-89c7-3622453f8f1e",
+          "id": "5528ee91-5b69-478b-946f-3f68917bc19d",
           "file": "vulnerable_sample.py",
           "line": 16,
           "type": "blacklist",
@@ -114,7 +114,7 @@
           "vulnerability_id": null
         },
         {
-          "id": "784d6c36-fc41-4d1b-92ae-ed4f1f5b7df2",
+          "id": "65b368f8-9233-4990-bf02-302a472c1568",
           "file": "vulnerable_sample.py",
           "line": 26,
           "type": "hardcoded_sql_expressions",
@@ -126,7 +126,7 @@
           "vulnerability_id": null
         },
         {
-          "id": "a8433fc7-db0a-45ee-a2c0-23c4e4775abe",
+          "id": "bdce2929-16bd-4b6d-97b7-07cf03506718",
           "file": "vulnerable_sample.py",
           "line": 43,
           "type": "Weak Hashing Algorithm",
@@ -139,7 +139,7 @@
           "vulnerability_id": null
         },
         {
-          "id": "a205d130-9607-4568-a03b-8c26b4a84486",
+          "id": "3ac4506a-2bf5-4304-b883-9f3734cb0b87",
           "file": "package.json",
           "line": 1,
           "type": "vulnerable_dependency",
@@ -154,7 +154,7 @@
           "new_version": "4.17.15"
         },
         {
-          "id": "fe18ae98-7dc4-4eca-9acb-fc7efb6597cb",
+          "id": "ac216e39-e99a-4355-9fe5-37328607ea05",
           "file": "requirements.txt",
           "line": 1,
           "type": "vulnerable_dependency",
@@ -169,7 +169,7 @@
           "new_version": "2.6.0"
         },
         {
-          "id": "7d7e8af5-cdb7-456e-96f3-59f448f793b1",
+          "id": "3b33270f-a206-4f36-a2a3-fc9546aa9489",
           "file": "requirements.txt",
           "line": 2,
           "type": "vulnerable_dependency",
@@ -186,7 +186,7 @@
       ],
       "regressed": [
         {
-          "id": "a1e12397-ae81-411f-8704-560c8e11f533",
+          "id": "9942c055-2287-4f30-8f0f-044f7e34a909",
           "file": "new_module.py",
           "line": 5,
           "type": "SQL Injection",
@@ -202,7 +202,7 @@
       ],
       "not_comparable": [
         {
-          "id": "3c5e6959-57c9-48f7-b4b0-b52233f37ef0",
+          "id": "4beec789-4668-4584-bc56-666a253f1437",
           "file": "utils.js",
           "line": 4,
           "type": "Js Eval",
@@ -211,7 +211,7 @@
           "source_tools": [
             "semgrep"
           ],
-          "vulnerability_id": "e0ec5cfc-e0fe-4910-a44f-0c7e8c0e0c7f",
+          "vulnerability_id": "eb75ff19-34b3-4913-bc69-1ef4efb660dc",
           "reason": "detector did not run or failed in current scan (semgrep)"
         }
       ]
