@@ -3,6 +3,23 @@
 # The build stage runs `npm ci` to install fresh deps, so local node_modules must
 # be excluded. dist/ is rebuilt inside the container, so the local one is excluded too.
 
+# Version control & repositories
+.git
+.gitignore
+
+# Environment & secrets
+.env
+.env.local
+.env.*
+docker.env
+docker.env.*
+
+# Virtual environments & uploads
+.venv
+venv
+uploads
+uploads/
+
 # Dependencies — always reinstalled fresh inside the build stage
 node_modules
 
@@ -13,11 +30,6 @@ dist-ssr
 .vinxi
 .nitro
 .tanstack
-
-# Local environment file — VITE_API_BASE_URL is passed via build ARG in compose
-.env
-.env.local
-.env.*.local
 
 # Test artefacts and screenshots (large, not needed in image)
 phase1-screenshots

@@ -22,3 +22,5 @@ backend/scripts/step8_evidence.py
 # sample-vulnerable-code/vulnerable_sample.py is a tracked test fixture.
 # backend/scripts/benchmarks/benchmark_real_3000.py is a tracked benchmark.
 # A wildcard like vulnerable_*.py would hide both from git.
+backend/tests/test_archives/
+

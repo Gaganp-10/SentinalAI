@@ -2,7 +2,7 @@ import os
 import json
 from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 # Resolve the .env path relative to this file so it works regardless of CWD
 _ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # Postgres configuration
     POSTGRES_SERVER: str = "db"
     POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = "security_scanner"
     DATABASE_URL: Optional[str] = None
 
@@ -56,8 +56,12 @@ class Settings(BaseSettings):
 
     # Uploads configuration
     UPLOAD_DIR: str = "uploads"
-    MAX_UPLOAD_SIZE_MB: int = 50
-    MAX_MANIFEST_UPLOAD_SIZE_MB: int = 10
+    MAX_UPLOAD_SIZE_MB: int = 2               # 2 MB per source file
+    MAX_ZIP_UPLOAD_SIZE_MB: int = 50          # 50 MB zip upload cap
+    MAX_MANIFEST_UPLOAD_SIZE_MB: int = 10     # 10 MB per manifest
+    MAX_ZIP_FILES: int = 5000                 # 5000 kept files limit
+    MAX_ZIP_RATIO: float = 100.0              # 100 max compression ratio
+    MAX_UNCOMPRESSED_SIZE_MB: int = 500       # 500 MB total uncompressed
     ALLOWED_EXTENSIONS: List[str] = ["py", "js", "jsx", "ts", "tsx", "java", "c", "cpp", "h", "php", "zip"]
 
     # OSV.dev SCA configuration
@@ -65,6 +69,33 @@ class Settings(BaseSettings):
 
     # CORS configuration
     ALLOWED_ORIGINS: List[str] = ["*"]
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        env_mode = (self.ENV or "development").strip().lower()
+        if env_mode != "development":
+            insecure_keys = {
+                "SUPER_SECRET_KEY_CHANGE_ME_IN_PRODUCTION_1234567890",
+                "dev-secret-key-change-later-for-production-min-32-chars",
+                "a_very_secure_random_key_value_min_32_characters",
+                "dev-secret-key-change-later",
+                "change-this-in-production",
+            }
+            if not self.SECRET_KEY or self.SECRET_KEY in insecure_keys or len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    f"Production/staging mode (ENV='{self.ENV}') requires a secure SECRET_KEY "
+                    "that is not a default placeholder and has at least 32 characters."
+                )
+            if not self.POSTGRES_PASSWORD or self.POSTGRES_PASSWORD.strip() == "" or self.POSTGRES_PASSWORD == "postgres":
+                raise ValueError(
+                    f"Production/staging mode (ENV='{self.ENV}') requires a non-default POSTGRES_PASSWORD "
+                    "(cannot be empty or 'postgres')."
+                )
+            if self.DATABASE_URL and ":postgres@" in self.DATABASE_URL:
+                raise ValueError(
+                    f"Production/staging mode (ENV='{self.ENV}') DATABASE_URL contains default password 'postgres'."
+                )
+        return self
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

@@ -154,12 +154,19 @@ function ProjectDetailPage() {
   const upload = useMutation({
     mutationFn: (file: File) => uploadFile(projectId, file, setProgress),
     onMutate: () => setProgress(0),
-    onSuccess: async (uploadedFiles) => {
+    onSuccess: async (res) => {
       await queryClient.invalidateQueries({ queryKey: ["projects", projectId, "files"] });
-      if (uploadedFiles.length === 1 && uploadedFiles[0]) {
-        toast.success(`Uploaded ${uploadedFiles[0].filename}`);
+      const acceptedCount = res.accepted.length;
+      const skippedEntries = Object.entries(res.skipped || {}).filter(([_, count]) => count > 0);
+      let skipSummary = "";
+      if (skippedEntries.length > 0) {
+        skipSummary = ` (${skippedEntries.map(([reason, count]) => `${count} ${reason}`).join(", ")} skipped)`;
+      }
+
+      if (acceptedCount === 1 && res.accepted[0]) {
+        toast.success(`Uploaded ${res.accepted[0].filename}${skipSummary}`);
       } else {
-        toast.success(`Uploaded ${uploadedFiles.length} files from ZIP archive`);
+        toast.success(`Uploaded ${acceptedCount} files${skipSummary}`);
       }
     },
     onError: (error) => toast.error(toApiErrorMessage(error)),

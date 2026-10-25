@@ -199,6 +199,7 @@ def regenerate_vulnerability_fix(
     return vuln
 
 
+@router.post("/{vuln_id}/fix", response_model=ApplyFixResponse)
 @router.post("/{vuln_id}/apply-fix", response_model=ApplyFixResponse)
 def apply_vulnerability_fix(
     vuln_id: UUID,

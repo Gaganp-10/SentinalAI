@@ -17,14 +17,8 @@ function resolveApiBaseUrl(): string {
     return rawEnvUrl.trim().replace(/\/+$/, "");
   }
 
-  if (import.meta.env.PROD) {
-    throw new Error(
-      "[SentinelAI Config Error] VITE_API_BASE_URL is missing or empty in the production build environment! " +
-        "You must set VITE_API_BASE_URL in your build environment (e.g., VITE_API_BASE_URL=https://api.sentinelai.com)."
-    );
-  }
-
-  // Development default: relative paths proxied by Vite dev server
+  // When empty or unset, use relative paths ("") so requests go to current origin /api/...
+  // Nginx reverse-proxies /api/ to backend:8000 in Docker, and Vite proxies it in dev.
   return "";
 }
 

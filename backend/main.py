@@ -61,3 +61,11 @@ def api_root():
         "service": settings.PROJECT_NAME,
         "version": "v1"
     }
+
+@app.get("/api/health")
+def health_check():
+    """
+    Lightweight liveness/readiness probe used by Docker Compose healthcheck
+    and nginx upstream checks. Returns 200 when the process is up.
+    """
+    return {"status": "ok"}

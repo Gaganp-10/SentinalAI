@@ -32,15 +32,20 @@ export async function listFiles(projectId: string): Promise<ProjectFile[]> {
   return Array.isArray(data) ? data : [];
 }
 
+export type UploadFilesResponse = {
+  accepted: ProjectFile[];
+  skipped?: Record<string, number>;
+};
+
 export async function uploadFile(
   projectId: string,
   file: File,
   onProgress?: (percent: number) => void,
-): Promise<ProjectFile[]> {
+): Promise<UploadFilesResponse> {
   const form = new FormData();
   form.append("file", file);
 
-  const { data } = await apiClient.post<ProjectFile | ProjectFile[]>(
+  const { data } = await apiClient.post<any>(
     `/api/projects/${projectId}/files`,
     form,
     {
@@ -50,8 +55,11 @@ export async function uploadFile(
       },
     },
   );
-  // Backend returns a list for ZIPs and also a list for single files (response_model=List[FileOut])
-  return Array.isArray(data) ? data : [data];
+  if (data && typeof data === "object" && "accepted" in data) {
+    return data as UploadFilesResponse;
+  }
+  const files = Array.isArray(data) ? data : [data];
+  return { accepted: files, skipped: {} };
 }
 
 export async function startScan(projectId: string): Promise<ScanHistory> {
