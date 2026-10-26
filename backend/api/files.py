@@ -320,7 +320,7 @@ def upload_files(
                             detail=f"ZIP contains more than {max_zip_files} accepted files"
                         )
 
-                    target_path = os.path.realpath(os.path.join(project_upload_dir, *norm_parts))
+                    target_path = os.path.join(project_upload_dir, *norm_parts)
                     dir_path = os.path.dirname(target_path)
                     if dir_path not in seen_dirs:
                         os.makedirs(dir_path, exist_ok=True)
@@ -384,7 +384,7 @@ def upload_files(
                         skipped[skip_this] += 1
                         continue
 
-                    rel_filepath = os.path.relpath(target_path, project_upload_dir).replace("\\", "/")
+                    rel_filepath = "/".join(norm_parts)
                     lang = detect_language(file_base)
 
                     db_file = DBFile(
@@ -394,9 +394,10 @@ def upload_files(
                         language=lang,
                         size=bytes_written_file
                     )
-                    db.add(db_file)
                     saved_files.append(db_file)
 
+            if saved_files:
+                db.add_all(saved_files)
             db.commit()
 
         except HTTPException:
@@ -408,6 +409,18 @@ def upload_files(
                     except Exception:
                         pass
             raise
+        except zipfile.BadZipFile:
+            db.rollback()
+            for p in created_disk_paths:
+                if os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The uploaded file is not a valid ZIP archive."
+            )
         except Exception as e:
             db.rollback()
             for p in created_disk_paths:
