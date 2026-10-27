@@ -20,6 +20,8 @@ export type Vulnerability = {
   fixed: boolean;
   auto_fixable?: boolean;
   fix_source?: string | null;
+  no_fix_available?: boolean;
+  fix_message?: string | null;
 };
 
 export type ApplyFixResult = {

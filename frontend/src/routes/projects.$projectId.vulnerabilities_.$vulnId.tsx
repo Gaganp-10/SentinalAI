@@ -168,9 +168,15 @@ function VulnerabilityDetailPage() {
 
   const regenerate = useMutation({
     mutationFn: () => regenerateFix(vulnId),
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
       await refresh();
-      toast.success("Suggested fix regenerated");
+      const origNorm = (updated?.code_snippet || "").trim().replace(/\s+/g, " ");
+      const fixNorm = (updated?.suggested_fix || "").trim().replace(/\s+/g, " ");
+      if (updated?.no_fix_available || !updated?.suggested_fix || (origNorm && fixNorm === origNorm)) {
+        toast.info(updated?.fix_message || "The provider returned no change");
+      } else {
+        toast.success("Suggested fix regenerated");
+      }
     },
     onError: (error) => toast.error(toApiErrorMessage(error)),
   });
@@ -190,7 +196,14 @@ function VulnerabilityDetailPage() {
   });
 
   const data = vuln.data;
-  const autoFixable = data?.auto_fixable !== false && Boolean(data?.suggested_fix);
+  const origNorm = (data?.code_snippet || "").trim().replace(/\s+/g, " ");
+  const fixNorm = (data?.suggested_fix || "").trim().replace(/\s+/g, " ");
+  const isNoFix = Boolean(
+    data?.no_fix_available ||
+    !data?.suggested_fix ||
+    (origNorm && fixNorm === origNorm)
+  );
+  const autoFixable = !isNoFix && data?.auto_fixable !== false;
 
   return (
     <DashboardShell>
@@ -381,13 +394,22 @@ function VulnerabilityDetailPage() {
                 Before and after line-by-line diff, exactly as the backend would write it to the file.
               </p>
 
-              <FixDiffViewer
-                originalCode={data.code_snippet ?? ""}
-                suggestedFix={data.suggested_fix ?? ""}
-                filename={data.file?.filename}
-              />
+              {!isNoFix && (
+                <FixDiffViewer
+                  originalCode={data.code_snippet ?? ""}
+                  suggestedFix={data.suggested_fix ?? ""}
+                  filename={data.file?.filename}
+                />
+              )}
 
-              {!autoFixable && (
+              {isNoFix ? (
+                <div className="glass-field mt-5 flex items-start gap-3 rounded-[18px] px-4 py-3.5">
+                  <AlertTriangle className="mt-0.5 size-[16px] shrink-0 text-[oklch(0.82_0.13_95)]" />
+                  <p className="text-[13px] leading-[1.65] text-muted-foreground font-medium">
+                    No automatic fix available; review manually.
+                  </p>
+                </div>
+              ) : !autoFixable ? (
                 <div className="glass-field mt-5 flex items-start gap-3 rounded-[18px] px-4 py-3.5">
                   <AlertTriangle className="mt-0.5 size-[16px] shrink-0 text-[oklch(0.82_0.13_95)]" />
                   <p className="text-[13px] leading-[1.65] text-muted-foreground">
@@ -395,7 +417,7 @@ function VulnerabilityDetailPage() {
                     type of issue.
                   </p>
                 </div>
-              )}
+              ) : null}
 
               <div className="mt-5 flex flex-wrap gap-3">
                 {data.type === "vulnerable_dependency" ? (
@@ -411,7 +433,7 @@ function VulnerabilityDetailPage() {
                   </button>
                 ) : (
                   <>
-                    {autoFixable && (
+                    {!isNoFix && autoFixable && (
                       <button
                         type="button"
                         onClick={() => apply.mutate()}

@@ -191,6 +191,11 @@ def regenerate_vulnerability_fix(
     from backend.fixer.fix_generator import generate_patched_code
     _, corrected_snippet, _, auto_fixable, fix_source = generate_patched_code(finding, full_file_content)
     
+    orig_norm = " ".join((vuln.code_snippet or "").split())
+    fix_norm = " ".join((corrected_snippet or "").split())
+    if not corrected_snippet or fix_norm == orig_norm:
+        auto_fixable = False
+
     vuln.suggested_fix = corrected_snippet
     vuln.auto_fixable = auto_fixable
     vuln.fix_source = fix_source
@@ -212,7 +217,7 @@ def apply_vulnerability_fix(
     If found exactly once: replaces it with vulnerability.suggested_fix, writes
     the updated file atomically to disk, sets vulnerability.fixed = True, and commits to DB.
     Returns 409 Conflict if found 0 or >1 times, or if already marked fixed.
-    Returns 422 Unprocessable Entity if auto_fixable is False.
+    Returns 422 Unprocessable Entity if auto_fixable is False or no fix is available.
     """
     vuln = (
         db.query(Vulnerability)
@@ -231,10 +236,12 @@ def apply_vulnerability_fix(
             detail="Vulnerability not found"
         )
 
-    if not vuln.auto_fixable:
+    orig_norm = " ".join((vuln.code_snippet or "").split())
+    fix_norm = " ".join((vuln.suggested_fix or "").split())
+    if not vuln.auto_fixable or not vuln.suggested_fix or not fix_norm or (orig_norm and fix_norm == orig_norm):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="This finding doesn't have an automatically-applicable fix. Please review the recommendation and update the code manually."
+            detail="No automatic fix available; review manually. This finding doesn't have an automatically-applicable fix."
         )
 
     if vuln.fixed:
@@ -243,7 +250,7 @@ def apply_vulnerability_fix(
             detail="This vulnerability is already marked as fixed."
         )
 
-    if not vuln.code_snippet or vuln.suggested_fix is None:
+    if not vuln.code_snippet:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Could not locate the original code in the current file — it may have already been modified. Try regenerating the fix or editing manually."

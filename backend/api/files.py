@@ -320,19 +320,80 @@ def upload_files(
                             detail=f"ZIP contains more than {max_zip_files} accepted files"
                         )
 
-                    target_path = os.path.join(project_upload_dir, *norm_parts)
+                    # Write-time confinement: compute target with realpath immediately before opening for write
+                    target_path = os.path.realpath(os.path.join(project_upload_dir, *norm_parts))
+                    try:
+                        common = os.path.commonpath([target_path, project_upload_dir_real])
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Zip-Slip: path outside destination for '{member.filename}'"
+                        )
+                    if common != project_upload_dir_real or not target_path.startswith(project_upload_dir_real + os.sep):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Zip-Slip: path traversal in '{member.filename}'"
+                        )
+
+                    # Refuse if target itself is a symlink
+                    if os.path.islink(target_path):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Zip-Slip: symlink target detected in '{member.filename}'"
+                        )
+
+                    # Refuse if any parent directory along the join path is a symlink
+                    comp_path = project_upload_dir_real
+                    for part in norm_parts[:-1]:
+                        comp_path = os.path.join(comp_path, part)
+                        if os.path.islink(comp_path):
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Zip-Slip: symlink parent directory detected in '{member.filename}'"
+                            )
+
                     dir_path = os.path.dirname(target_path)
+                    curr_p = dir_path
+                    while curr_p and curr_p != project_upload_dir_real and len(curr_p) >= len(project_upload_dir_real):
+                        if os.path.islink(curr_p):
+                            raise HTTPException(
+                                status_code=status.HTTP_400_BAD_REQUEST,
+                                detail=f"Zip-Slip: symlink parent directory detected in '{member.filename}'"
+                            )
+                        p_parent = os.path.dirname(curr_p)
+                        if p_parent == curr_p:
+                            break
+                        curr_p = p_parent
+
                     if dir_path not in seen_dirs:
                         os.makedirs(dir_path, exist_ok=True)
                         seen_dirs.add(dir_path)
-                    created_disk_paths.append(target_path)
+
+                    # Track whether file existed before this upload request
+                    existed_before = os.path.exists(target_path)
+                    if not existed_before:
+                        created_disk_paths.append(target_path)
 
                     # 5. Stream-extract with byte counting; read first chunk for binary/minified detection
                     bytes_written_file = 0
                     first_chunk_checked = False
                     skip_this = None
 
-                    with z.open(member) as source, open(target_path, "wb") as target:
+                    open_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                    if hasattr(os, "O_NOFOLLOW"):
+                        open_flags |= os.O_NOFOLLOW
+                    if hasattr(os, "O_BINARY"):
+                        open_flags |= os.O_BINARY
+
+                    try:
+                        fd = os.open(target_path, open_flags, 0o644)
+                    except OSError as oe:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Zip-Slip: cannot open file safely '{member.filename}': {oe}"
+                        )
+
+                    with z.open(member) as source, os.fdopen(fd, "wb") as target:
                         while True:
                             chunk = source.read(65536)
                             if not chunk:
@@ -375,16 +436,17 @@ def upload_files(
                     if skip_this:
                         # Roll back bytes from total and remove partial file
                         total_bytes_written -= bytes_written_file
-                        if os.path.exists(target_path):
-                            try:
-                                os.remove(target_path)
-                            except Exception:
-                                pass
-                        created_disk_paths = [p for p in created_disk_paths if p != target_path]
+                        if target_path in created_disk_paths:
+                            if os.path.exists(target_path):
+                                try:
+                                    os.remove(target_path)
+                                except Exception:
+                                    pass
+                            created_disk_paths.remove(target_path)
                         skipped[skip_this] += 1
                         continue
 
-                    rel_filepath = "/".join(norm_parts)
+                    rel_filepath = os.path.relpath(target_path, project_upload_dir_real).replace("\\", "/")
                     lang = detect_language(file_base)
 
                     db_file = DBFile(
@@ -403,7 +465,7 @@ def upload_files(
         except HTTPException:
             db.rollback()
             for p in created_disk_paths:
-                if os.path.isfile(p):
+                if os.path.isfile(p) or os.path.islink(p):
                     try:
                         os.remove(p)
                     except Exception:
@@ -412,7 +474,7 @@ def upload_files(
         except zipfile.BadZipFile:
             db.rollback()
             for p in created_disk_paths:
-                if os.path.isfile(p):
+                if os.path.isfile(p) or os.path.islink(p):
                     try:
                         os.remove(p)
                     except Exception:
@@ -424,7 +486,7 @@ def upload_files(
         except Exception as e:
             db.rollback()
             for p in created_disk_paths:
-                if os.path.isfile(p):
+                if os.path.isfile(p) or os.path.islink(p):
                     try:
                         os.remove(p)
                     except Exception:

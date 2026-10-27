@@ -116,11 +116,17 @@ function VulnerabilitiesPage() {
     mutationFn: (vulnId: string) => regenerateFix(vulnId),
     onMutate: (vulnId) => setRegeneratingId(vulnId),
     onSettled: () => setRegeneratingId(null),
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
       await queryClient.invalidateQueries({
         queryKey: ["projects", projectId, "vulnerabilities"],
       });
-      toast.success("Suggested fix regenerated");
+      const origNorm = (updated?.code_snippet || "").trim().replace(/\s+/g, " ");
+      const fixNorm = (updated?.suggested_fix || "").trim().replace(/\s+/g, " ");
+      if (updated?.no_fix_available || !updated?.suggested_fix || (origNorm && fixNorm === origNorm)) {
+        toast.info(updated?.fix_message || "The provider returned no change");
+      } else {
+        toast.success("Suggested fix regenerated");
+      }
     },
     onError: (error) => toast.error(toApiErrorMessage(error)),
   });

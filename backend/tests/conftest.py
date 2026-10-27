@@ -11,11 +11,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from backend.main import app
 from backend.database.session import Base, get_db
 
-# Create a test SQLite database
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+from sqlalchemy.pool import StaticPool
+
+SQLALCHEMY_DATABASE_URL = "sqlite://"
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -30,11 +33,6 @@ def db():
         session.close()
         # Tear down test tables
         Base.metadata.drop_all(bind=engine)
-        if os.path.exists("./test.db"):
-            try:
-                os.remove("./test.db")
-            except Exception:
-                pass
 
 @pytest.fixture(scope="function")
 def client(db, monkeypatch):

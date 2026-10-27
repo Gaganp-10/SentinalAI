@@ -111,6 +111,10 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
                 # Generate AI explanation and fix
                 explanation = generate_vulnerability_explanation(finding)
                 _, corrected_snippet, _, auto_fixable, fix_source = generate_patched_code(finding, full_file_content)
+                orig_norm = " ".join((finding.code_snippet or "").split())
+                fix_norm = " ".join((corrected_snippet or "").split())
+                if not corrected_snippet or fix_norm == orig_norm:
+                    auto_fixable = False
             
             # Count severity
             sev = finding.severity.lower()

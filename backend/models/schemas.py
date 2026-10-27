@@ -97,15 +97,30 @@ class VulnerabilityOut(BaseModel):
     fixed: bool
     auto_fixable: bool = True
     fix_source: Optional[str] = None  # "template" | "ai" | None
+    no_fix_available: bool = False
+    fix_message: Optional[str] = None
 
     class Config:
         from_attributes = True
 
     @model_validator(mode='after')
-    def populate_explanation(self) -> 'VulnerabilityOut':
-        """Mirror recommendation → explanation so the frontend 'explanation' field is always populated."""
+    def evaluate_fix_state(self) -> 'VulnerabilityOut':
+        """Populate explanation and compute no_fix_available state."""
         if self.explanation is None and self.recommendation is not None:
             self.explanation = self.recommendation
+
+        orig = (self.code_snippet or "").strip()
+        fix = (self.suggested_fix or "").strip()
+        orig_norm = " ".join(orig.split())
+        fix_norm = " ".join(fix.split())
+
+        if not fix or (orig and fix_norm == orig_norm):
+            self.no_fix_available = True
+            self.auto_fixable = False
+            if not self.fix_message:
+                self.fix_message = "The provider returned no change"
+        else:
+            self.no_fix_available = False
         return self
 
 class VulnerabilityUpdate(BaseModel):
