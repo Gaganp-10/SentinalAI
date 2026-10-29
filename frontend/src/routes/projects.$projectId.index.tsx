@@ -291,7 +291,7 @@ function ProjectDetailPage() {
         </div>
       </main>
 
-      <SecurityCopilot />
+      <SecurityCopilot projectId={projectId} />
     </DashboardShell>
   );
 }

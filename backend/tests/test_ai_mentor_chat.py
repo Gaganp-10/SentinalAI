@@ -140,7 +140,7 @@ def test_vulnerable_dependency_copilot_context(client, db, monkeypatch):
     db.refresh(dep_vuln)
 
     mock_provider = MagicMock()
-    mock_provider.ask_question.return_value = "Upgrade requests to 2.32.0."
+    mock_provider.ask_dependency_question.return_value = "Upgrade requests to 2.31.0 based on GHSA-j8r2-6x86-q33q."
     monkeypatch.setattr(ai_module, "get_ai_provider", lambda: mock_provider)
 
     res = client.post(
@@ -152,13 +152,29 @@ def test_vulnerable_dependency_copilot_context(client, db, monkeypatch):
         headers=headers
     )
     assert res.status_code == 200
-    mock_provider.ask_question.assert_called_once()
-    call_kwargs = mock_provider.ask_question.call_args[1]
-    copilot_context = call_kwargs["full_file_source"]
+    # Must route to the strict dependency method, NOT generic ask_question
+    mock_provider.ask_dependency_question.assert_called_once()
+    mock_provider.ask_question.assert_not_called()
+
+    call_kwargs = mock_provider.ask_dependency_question.call_args[1]
+    copilot_context = call_kwargs["dep_context"]
+    dep_name = call_kwargs["dep_name"]
+    dep_version = call_kwargs["dep_version"]
+
+    # Grounding markers must be present
+    assert "=== VERIFIED ADVISORY DATA" in copilot_context
+    assert "=== END OF VERIFIED ADVISORY DATA ===" in copilot_context
+
+    # Verified advisory data
     assert "requests==2.19.0" in copilot_context
     assert "GHSA-j8r2-6x86-q33q" in copilot_context
     assert "2.31.0" in copilot_context
     assert ">= 2.32.0" in copilot_context
+
+    # dep_name / dep_version passed explicitly (not buried in context)
+    assert dep_name == "requests"
+    assert dep_version == "2.19.0"
+
     # Never sends full manifest
     assert "Vulnerable dependency in `requirements.txt`" in copilot_context
 

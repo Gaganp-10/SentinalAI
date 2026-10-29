@@ -94,7 +94,7 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
             if finding.type == "vulnerable_dependency":
                 # CRITICAL: Dependency findings must NOT go through AI explain or fix generation
                 explanation = finding.recommendation
-                corrected_snippet = None
+                corrected_snippet = finding.suggested_fix
                 auto_fixable = False
                 fix_source = None
             else:

@@ -7,6 +7,7 @@ export type ChatMessage = {
 
 export type AskMentorRequest = {
   vuln_id?: string | undefined;
+  project_id?: string | undefined;
   question: string;
   history?: ChatMessage[] | undefined;
 };

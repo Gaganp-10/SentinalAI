@@ -498,6 +498,7 @@ function VulnerabilityDetailPage() {
       </main>
 
       <SecurityCopilot
+        projectId={projectId}
         vulnId={vulnId}
         findingContext={{
           type: data?.type,

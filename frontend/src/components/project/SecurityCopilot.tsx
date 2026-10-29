@@ -18,16 +18,32 @@ import { askMentor, type ChatMessage } from "../../api/ai";
 import { toApiErrorMessage } from "../../api/client";
 
 interface SecurityCopilotProps {
+  projectId?: string | undefined;
   vulnId?: string | undefined;
   findingContext?: {
     type?: string | undefined;
     severity?: string | undefined;
     filename?: string | undefined;
   } | undefined;
+  isOpenControlled?: boolean | undefined;
+  onOpenChange?: ((open: boolean) => void) | undefined;
 }
 
-export function SecurityCopilot({ vulnId, findingContext }: SecurityCopilotProps) {
-  const [isOpen, setIsOpen] = useState(false);
+export function SecurityCopilot({
+  projectId,
+  vulnId,
+  findingContext,
+  isOpenControlled,
+  onOpenChange,
+}: SecurityCopilotProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = isOpenControlled !== undefined ? isOpenControlled : internalOpen;
+  const setIsOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+    const val = typeof next === "function" ? next(isOpen) : next;
+    setInternalOpen(val);
+    onOpenChange?.(val);
+  };
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,6 +68,7 @@ export function SecurityCopilot({ vulnId, findingContext }: SecurityCopilotProps
   const askMutation = useMutation({
     mutationFn: (userQuestion: string) => {
       return askMentor({
+        project_id: projectId,
         vuln_id: vulnId,
         question: userQuestion,
         history: messages,
@@ -197,6 +214,8 @@ export function SecurityCopilot({ vulnId, findingContext }: SecurityCopilotProps
                     <p className="text-[11px] text-muted-foreground line-clamp-1">
                       {vulnId
                         ? `Context: ${findingContext?.type || "Active Finding"} (${findingContext?.filename || "file source loaded"})`
+                        : projectId
+                        ? "Project Security Assistant (Scan context enabled)"
                         : "General Security Guidance & Best Practices"}
                     </p>
                   </div>

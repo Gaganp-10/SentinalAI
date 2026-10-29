@@ -21,6 +21,22 @@ class AIProvider(ABC):
     def ask_question(self, question: str, type_name: str, description: str, code_snippet: Optional[str], full_file_source: Optional[str]) -> str:
         pass
 
+    @abstractmethod
+    def ask_dependency_question(
+        self,
+        question: str,
+        dep_context: str,
+        dep_name: str,
+        dep_version: str,
+    ) -> str:
+        """
+        Answers a question about a vulnerable dependency finding.
+        MUST only use the verified advisory data in dep_context.
+        MUST NOT fabricate CVE IDs, version numbers, patch dates, or
+        'latest version' claims that are not present in dep_context.
+        """
+        pass
+
 
 class FallbackTemplateProvider(AIProvider):
     def explain(self, type_name: str, description: str, severity: str, cwe_id: Optional[str], code_snippet: Optional[str]) -> str:
@@ -54,6 +70,21 @@ Refactor the code snippet `{code_snippet or ""}` to follow industry secure codin
             desc_text = f" ({description})" if description else ""
             return f"AI Mentor is running in offline template-fallback mode because no AI API key was configured. The finding is a {type_name}{desc_text}. Please check standard OWASP top 10 rules for advice on how to address it."
         return "AI Mentor is running in offline template-fallback mode because no AI API key was configured. For general security questions, please consult OWASP Top 10 guidelines and industry secure coding practices."
+
+    def ask_dependency_question(
+        self,
+        question: str,
+        dep_context: str,
+        dep_name: str,
+        dep_version: str,
+    ) -> str:
+        return (
+            f"AI Mentor is running in offline template-fallback mode (no AI API key configured). "
+            f"The package `{dep_name}=={dep_version}` has known vulnerabilities. "
+            f"Refer to the advisory records in the scan report and consult osv.dev or the package "
+            f"changelog for verified remediation steps. "
+            f"No CVE details or version recommendations can be provided without a live AI provider."
+        )
 
 
 class OpenAIProvider(AIProvider):
@@ -230,10 +261,70 @@ Provide concise, helpful security advice explaining what the developer should do
                 ],
                 temperature=0.3
             )
-            return response.choices[0].message.content or "No response generated."
+            text = response.choices[0].message.content or "No response generated."
+            text = text.replace("```\n\n```", "").replace("```\r\n\r\n```", "")
+            return text
         except Exception as e:
             self._handle_error(e, "Q&A")
             return self._fallback.ask_question(question, type_name, description, code_snippet, full_file_source)
+
+    def ask_dependency_question(
+        self,
+        question: str,
+        dep_context: str,
+        dep_name: str,
+        dep_version: str,
+    ) -> str:
+        """
+        Answers a developer's question about a vulnerable dependency finding.
+
+        Strict grounding rules enforced by the prompt:
+        - Answer ONLY from the verified advisory records supplied in dep_context.
+        - NEVER fabricate CVE IDs, version strings, patch dates, release names,
+          or 'latest version' / 'currently supported' claims that are not
+          explicitly present in dep_context.
+        - If the context does not contain enough information to answer
+          confidently, say so explicitly rather than inventing data.
+        - Distinguish clearly between what the advisory records state and
+          general remediation guidance.
+        """
+        system_prompt = (
+            "You are a security advisor helping developers understand vulnerable dependency findings. "
+            "You MUST base your response strictly on the verified advisory records provided in the user "
+            "message. You MUST NOT fabricate, infer, or hallucinate: CVE IDs, package version numbers, "
+            "release dates, patch versions, 'latest version' claims, or remediation steps that are NOT "
+            "explicitly stated in those records. "
+            "If the provided records do not contain enough information to answer a question, clearly say "
+            "\"The available advisory data does not confirm this\" or similar, and suggest the developer "
+            "check authoritative sources (osv.dev, PyPI changelog, npm advisory database, etc.) directly. "
+            "Always distinguish between facts drawn from the advisory records and general guidance."
+        )
+
+        user_prompt = f"""Verified advisory records for `{dep_name}=={dep_version}`:
+
+{dep_context}
+
+---
+IMPORTANT: Base your answer ONLY on the advisory records above. Do NOT introduce CVE IDs,
+version numbers, patch dates, or release claims that do not appear in those records.
+If the records are insufficient to answer, say so explicitly.
+---
+
+Developer question:
+{question}
+"""
+        try:
+            response = self._create_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1  # Low temperature: maximise faithfulness to provided records
+            )
+            return response.choices[0].message.content or "No response generated."
+        except Exception as e:
+            self._handle_error(e, "dependency Q&A")
+            return self._fallback.ask_dependency_question(question, dep_context, dep_name, dep_version)
 
 
 def get_ai_provider() -> AIProvider:

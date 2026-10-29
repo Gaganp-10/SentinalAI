@@ -64,6 +64,8 @@ function VulnerabilitiesPage() {
   const [depOnly, setDepOnly] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [selectedVulnId, setSelectedVulnId] = useState<string | null>(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const me = useQuery({ queryKey: ["auth", "me"], queryFn: getCurrentUser, retry: false });
   const project = useQuery({
@@ -269,6 +271,10 @@ function VulnerabilitiesPage() {
                   regenerating={regeneratingId === String(vuln.id) && regenerate.isPending}
                   onApply={() => apply.mutate(String(vuln.id))}
                   onRegenerate={() => regenerate.mutate(String(vuln.id))}
+                  onAskCopilot={() => {
+                    setSelectedVulnId(String(vuln.id));
+                    setCopilotOpen(true);
+                  }}
                 />
               ))}
             </ul>
@@ -310,7 +316,27 @@ function VulnerabilitiesPage() {
         )}
       </main>
 
-      <SecurityCopilot />
+      {(() => {
+        const activeVulnId = selectedVulnId || (list.length === 1 ? String(list[0].id) : undefined);
+        const activeVuln = activeVulnId ? list.find((v) => String(v.id) === String(activeVulnId)) : undefined;
+        return (
+          <SecurityCopilot
+            projectId={projectId}
+            vulnId={activeVulnId}
+            findingContext={
+              activeVuln
+                ? {
+                    type: activeVuln.type,
+                    severity: activeVuln.severity,
+                    filename: activeVuln.file?.filename,
+                  }
+                : undefined
+            }
+            isOpenControlled={copilotOpen}
+            onOpenChange={setCopilotOpen}
+          />
+        );
+      })()}
     </DashboardShell>
   );
 }

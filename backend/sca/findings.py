@@ -1,6 +1,6 @@
 import re
 import logging
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Tuple, Optional, Any, Union
 from packaging.version import parse as parse_pypi_version, InvalidVersion
 
 from backend.detectors.schema import Finding
@@ -180,15 +180,16 @@ def _is_valid_ecosystem_version(ecosystem: str, ver_str: str) -> bool:
     # Reject 40-character hex commit hashes from git ranges
     if re.fullmatch(r"[0-9a-fA-F]{40}", ver_str):
         return False
-    if ecosystem == "PyPI":
+    eco_norm = (ecosystem or "").strip().lower()
+    if eco_norm in ("pypi", "python"):
         try:
             parse_pypi_version(ver_str)
             return True
         except (InvalidVersion, TypeError):
             return False
-    elif ecosystem == "npm":
+    elif eco_norm in ("npm", "javascript", "node"):
         return parse_semver_npm(ver_str) is not None
-    elif ecosystem == "Maven":
+    elif eco_norm in ("maven", "java"):
         return parse_dotted_maven(ver_str) is not None
     return False
 
@@ -353,6 +354,105 @@ def compute_minimum_covering_version(
 
         highest = max(adv_minimums, key=lambda x: x[0])
         return highest[1]
+
+    return None
+
+
+def compute_minimum_fixed_version(
+    ecosystem: str,
+    fixed_versions_by_advisory: Union[List[str], List[List[str]]],
+    installed_version: Optional[str] = None
+) -> Optional[str]:
+    """
+    Computes the true minimum (earliest/lowest) fixed version strictly greater
+    than the installed version across all supplied advisory fixes.
+
+    Unlike compute_minimum_covering_version (which computes the maximum over
+    per-advisory minimums to satisfy all advisories simultaneously), this
+    function finds the single lowest version that fixes at least one advisory,
+    strictly greater than installed_version.
+
+    Args:
+        ecosystem: "PyPI", "npm", or "Maven".
+        fixed_versions_by_advisory: Either a flat list of version strings or a
+            list of per-advisory version string lists.
+        installed_version: The exact version currently installed.
+
+    Returns:
+        The lowest fixed version string strictly greater than installed_version,
+        or None if no applicable fixed version exists.
+    """
+    if not fixed_versions_by_advisory:
+        return None
+
+    flat_versions: List[str] = []
+    for item in fixed_versions_by_advisory:
+        if isinstance(item, list):
+            for v in item:
+                if v and isinstance(v, str) and v.strip():
+                    flat_versions.append(v.strip())
+        elif isinstance(item, str) and item.strip():
+            flat_versions.append(item.strip())
+
+    if not flat_versions:
+        return None
+
+    eco_norm = (ecosystem or "").strip().lower()
+    if eco_norm in ("pypi", "python"):
+        parsed_installed = None
+        if installed_version:
+            try:
+                parsed_installed = parse_pypi_version(installed_version)
+            except Exception:
+                pass
+
+        strictly_greater = []
+        for v in flat_versions:
+            if not _is_valid_ecosystem_version("PyPI", v):
+                continue
+            try:
+                pv = parse_pypi_version(v)
+                if parsed_installed is None or pv > parsed_installed:
+                    strictly_greater.append((pv, v))
+            except (InvalidVersion, TypeError):
+                continue
+
+        if not strictly_greater:
+            return None
+        smallest = min(strictly_greater, key=lambda x: x[0])
+        return smallest[1]
+
+    elif eco_norm in ("npm", "javascript", "node"):
+        parsed_installed = parse_semver_npm(installed_version) if installed_version else None
+        strictly_greater = []
+        for v in flat_versions:
+            if not _is_valid_ecosystem_version("npm", v):
+                continue
+            p = parse_semver_npm(v)
+            if p is not None:
+                if parsed_installed is None or p > parsed_installed:
+                    strictly_greater.append((p, v))
+
+        if not strictly_greater:
+            return None
+        smallest = min(strictly_greater, key=lambda x: x[0])
+        return smallest[1]
+
+    elif eco_norm in ("maven", "java"):
+        parsed_installed = parse_dotted_maven(installed_version) if installed_version else None
+        strictly_greater = []
+        for v in flat_versions:
+            if not _is_valid_ecosystem_version("Maven", v):
+                continue
+            p = parse_dotted_maven(v)
+            if p is not None:
+                if parsed_installed is None or p > parsed_installed:
+                    strictly_greater.append((p, v))
+
+        if not strictly_greater:
+            return None
+        smallest = min(strictly_greater, key=lambda x: x[0])
+        return smallest[1]
 
     return None
 
@@ -587,6 +687,23 @@ def build_copilot_context_for_dep(
     vulnerable_dependency findings.  Only the package declaration line,
     capped advisory summaries, and fixed versions are included.
     The manifest/lockfile content is NEVER sent.
+
+    Grounding contract
+    ------------------
+    The returned string opens with a clear VERIFIED ADVISORY DATA header and
+    closes with an explicit END marker and grounding reminder.  These boundary
+    markers allow the AI prompt to reference them so the model knows it must
+    not introduce CVEs, version numbers, patch dates, or 'latest version'
+    claims that are not present in this block.
+
+    Version terminology (critical — must not be confused)
+    -------------------------------------------------------
+    * Minimum fixed version: The LOWEST / EARLIEST fixed version strictly
+      greater than installed_version across all advisories.  Fixes at least
+      ONE advisory.  This is NOT the same as the covering version.
+    * Recommended covering version: The version required to satisfy ALL
+      advisories simultaneously.  Computed as the max of per-advisory minimums.
+      This is NOT the minimum fixed version and NOT the latest release.
     """
     cap = MAX_ADVISORIES_SHOWN
     shown = advisory_details[:cap]
@@ -600,24 +717,92 @@ def build_copilot_context_for_dep(
         # Maven: groupId:artifactId:version
         package_line = f"{dep_name}:{dep_version}"
 
+    # Compute minimum fixed version (lowest fix that addresses at least one advisory)
+    fixed_by_advisory: List[List[str]] = [adv.get("fixed", []) for adv in advisory_details]
+    minimum_fixed = compute_minimum_fixed_version(ecosystem, fixed_by_advisory, dep_version)
+
+    # Identify advisories that have missing or unknown fixed versions
+    missing_fix_advisories = [
+        adv["id"] for adv in advisory_details
+        if not adv.get("fixed") or not any(_is_valid_ecosystem_version(ecosystem, str(v).strip()) for v in adv["fixed"] if v)
+    ]
+
     lines = [
+        "=== VERIFIED ADVISORY DATA (source: OSV.dev) — answer ONLY from this section ===",
         f"Vulnerable dependency in `{manifest_file}`:",
         f"  Package: {package_line}",
         f"  Ecosystem: {ecosystem}",
+        f"  Installed version: {dep_version}",
     ]
-    if recommended_version:
-        lines.append(f"  Recommended minimum version: >= {recommended_version}")
+
+    # --- Minimum fixed version ---
+    if minimum_fixed:
+        lines.append(
+            f"  Minimum fixed version: {minimum_fixed}"
+            f" (EARLIEST fixed version strictly greater than installed `{dep_version}`"
+            f" found across all advisories — fixes at least ONE advisory;"
+            f" NOT to be confused with the highest/covering version below)"
+        )
     else:
-        lines.append("  Recommended minimum version: not determinable — manual review needed")
+        lines.append(
+            f"  Minimum fixed version: not determinable"
+            f" (no fixed version strictly greater than installed `{dep_version}`"
+            f" was found in any of the advisory records)"
+        )
+
+    # --- Recommended covering version ---
+    if recommended_version:
+        lines.append(
+            f"  Recommended covering version: >= {recommended_version}"
+            f" (calculated as the MAXIMUM of per-advisory minimums — upgrading to"
+            f" this version satisfies ALL {len(advisory_details)} detected advisories"
+            f" simultaneously; this is NOT the minimum fixed version and NOT a claim"
+            f" about the latest available release — verify on the package registry)"
+        )
+    else:
+        lines.append(
+            "  Recommended covering version: not determinable — manual review needed"
+            " (one or more advisories have no applicable fixed version strictly"
+            " greater than the installed version; no single version can be"
+            " automatically recommended to cover all advisories)"
+        )
+
+    # --- Missing-fix advisories ---
+    if missing_fix_advisories:
+        lines.append(
+            f"  Advisories with missing/unknown fixed versions: {', '.join(missing_fix_advisories)}"
+            f" (manual review required for these)"
+        )
+    else:
+        lines.append(
+            "  Advisories with missing/unknown fixed versions: None"
+            " (all reported advisories provide fixed version data)"
+        )
 
     lines.append(f"\nKnown advisories ({len(advisory_details)} total, showing top {len(shown)}):")
     for adv in shown:
         cve_part = f" ({adv['cve']})" if adv.get("cve") else ""
-        fix_part = f"; fixed in {', '.join(adv['fixed'])}" if adv.get("fixed") else ""
+        valid_fixes = [str(v).strip() for v in (adv.get("fixed") or []) if v and _is_valid_ecosystem_version(ecosystem, str(v).strip())]
+        if valid_fixes:
+            fix_part = f"; fixed in {', '.join(valid_fixes)}"
+        else:
+            fix_part = "; no fixed version available / unknown (manual review needed)"
         lines.append(f"  - {adv['id']}{cve_part} [{adv['severity']}]: {adv['summary']}{fix_part}")
 
     if hidden > 0:
         osv_url = f"https://osv.dev/list?ecosystem={ecosystem}&q={dep_name}"
         lines.append(f"  - ...and {hidden} more: {osv_url}")
+
+    lines.append(
+        "\n=== END OF VERIFIED ADVISORY DATA ==="
+        "\nCRITICAL VERSION TERMINOLOGY (do NOT confuse these):"
+        "\n  - 'Minimum fixed version': the LOWEST version that fixes at least one advisory."
+        "\n  - 'Recommended covering version': the version that fixes ALL advisories at once."
+        "\n  - Neither is a 'latest release' claim."
+        "\nDo NOT introduce CVE IDs, version numbers, patch dates, or 'latest version'"
+        " claims that are NOT listed above. If a question cannot be answered from the"
+        " data above, say so explicitly and direct the developer to osv.dev or the"
+        " package changelog."
+    )
 
     return "\n".join(lines)
