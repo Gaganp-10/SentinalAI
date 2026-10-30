@@ -304,13 +304,15 @@ def apply_vulnerability_fix(
     # line of the fix, producing a syntax error (two statements on one line).
     snippet_had_trailing_newline = vuln.code_snippet.endswith("\n")
     fix_to_apply = vuln.suggested_fix
+    orig_indent_len = len(vuln.code_snippet) - len(vuln.code_snippet.lstrip(" \t"))
+    orig_indent = vuln.code_snippet[:orig_indent_len]
+    fix_lines = fix_to_apply.splitlines()
+    if fix_lines and orig_indent and not fix_lines[0].startswith(orig_indent):
+        fix_to_apply = "\n".join(orig_indent + l if l.strip() else l for l in fix_lines)
     if snippet_had_trailing_newline:
         if not fix_to_apply.endswith("\n"):
             fix_to_apply = fix_to_apply + "\n"
     else:
-        # If the original did NOT end with \n, strip any spurious trailing
-        # newline that was added by the generator so the replacement is
-        # character-for-character compatible with the original boundary.
         fix_to_apply = fix_to_apply.rstrip("\n")
 
     new_content = file_content.replace(vuln.code_snippet, fix_to_apply, 1)
@@ -326,6 +328,10 @@ def apply_vulnerability_fix(
             new_content = add_import_if_missing(new_content, "hashlib", "import hashlib")
         elif "subprocess." in fix_to_apply:
             new_content = add_import_if_missing(new_content, "subprocess", "import subprocess")
+        elif "ast." in fix_to_apply:
+            new_content = add_import_if_missing(new_content, "ast", "import ast")
+        elif "json." in fix_to_apply:
+            new_content = add_import_if_missing(new_content, "json", "import json")
 
         # 2. Syntax validation via ast.parse
         try:

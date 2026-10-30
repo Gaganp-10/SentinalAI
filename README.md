@@ -85,6 +85,9 @@ can safely generate and apply a real code fix directly to the file.
 **Infrastructure**
 - Docker + Docker Compose (backend, PostgreSQL, and frontend as separate
   services, with a multi-stage frontend build served via nginx)
+- **Named Volumes & Storage**:
+  - `postgres_data`: Persistent storage for PostgreSQL (mounted at `/var/lib/postgresql/data`).
+  - `uploads_data`: High-performance named volume for scanned user code and extracted files (mounted inside the backend container at `/app/uploads`). Docker Compose namespaces this volume as `securityvulnerabilitydecoderandfixer_uploads_data`. *(Note: any references in legacy notes or documentation mentioning `uploads_data (backend_uploads:...)` refer strictly to this Compose volume `uploads_data` mounted at `/app/uploads`).*
 
 ## Architecture
 

@@ -271,6 +271,7 @@ SURROUNDING FILE CONTEXT:
 TASK:
 Provide ONLY the exact replacement code snippet that directly replaces the ORIGINAL VULNERABLE SNIPPET above.
 Preserve the exact leading indentation of the original snippet so it can be replaced cleanly.
+Do NOT include import statements in the snippet (e.g. no 'import json'); any required top-level imports are added automatically.
 Do NOT include markdown formatting (do NOT use ``` or ```python).
 Do NOT include explanations, warnings, comments about what changed, or conversational text.
 Output pure, runnable Python code only.
@@ -279,7 +280,7 @@ Output pure, runnable Python code only.
         if hasattr(provider, "_create_completion"):
             response = provider._create_completion(
                 messages=[
-                    {"role": "system", "content": "You are an automated secure code fixer. Output only the replacement code snippet. No markdown code fences, no explanations."},
+                    {"role": "system", "content": "You are an automated secure code fixer. Output only the replacement code snippet. No markdown code fences, no explanations, no import statements."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1
@@ -288,7 +289,7 @@ Output pure, runnable Python code only.
             response = provider.client.chat.completions.create(
                 model=provider.model,
                 messages=[
-                    {"role": "system", "content": "You are an automated secure code fixer. Output only the replacement code snippet. No markdown code fences, no explanations."},
+                    {"role": "system", "content": "You are an automated secure code fixer. Output only the replacement code snippet. No markdown code fences, no explanations, no import statements."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1
@@ -306,6 +307,13 @@ Output pure, runnable Python code only.
         if not clean_fix:
             return full_file_content, snippet, "", False
 
+        # Preserve original indentation if fix stripped it
+        orig_indent_len = len(snippet) - len(snippet.lstrip(" \t"))
+        orig_indent = snippet[:orig_indent_len]
+        fix_lines = clean_fix.splitlines()
+        if fix_lines and orig_indent and not fix_lines[0].startswith(orig_indent):
+            clean_fix = "\n".join(orig_indent + l if l.strip() else l for l in fix_lines)
+
         if snippet.endswith("\n") and not clean_fix.endswith("\n"):
             clean_fix += "\n"
 
@@ -313,6 +321,12 @@ Output pure, runnable Python code only.
             return full_file_content, clean_fix, "", False
 
         corrected_file = full_file_content.replace(snippet, clean_fix, 1)
+
+        from backend.fixer.fix_runtime import add_import_if_missing
+        if "ast." in clean_fix:
+            corrected_file = add_import_if_missing(corrected_file, "ast", "import ast")
+        elif "json." in clean_fix:
+            corrected_file = add_import_if_missing(corrected_file, "json", "import json")
 
         try:
             ast.parse(corrected_file)

@@ -58,9 +58,10 @@ def test_nested_zip_archives_are_not_extracted(client, db):
 
     assert response.status_code == 201, f"Upload failed: {response.text}"
     files_data = response.json()
+    accepted = files_data.get("accepted", files_data) if isinstance(files_data, dict) else files_data
 
     # 5. Verify extracted filenames
-    extracted_filenames = [f["filename"] for f in files_data]
+    extracted_filenames = [f["filename"] for f in accepted]
     assert "valid_app.py" in extracted_filenames
 
     # CRITICAL: hidden_nested_file.py from inner.zip must NOT be extracted or registered
