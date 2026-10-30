@@ -322,11 +322,14 @@ Output pure, runnable Python code only.
 
         corrected_file = full_file_content.replace(snippet, clean_fix, 1)
 
-        from backend.fixer.fix_runtime import add_import_if_missing
+        from backend.fixer.fix_runtime import add_import_if_missing, remove_unused_import
         if "ast." in clean_fix:
             corrected_file = add_import_if_missing(corrected_file, "ast", "import ast")
         elif "json." in clean_fix:
             corrected_file = add_import_if_missing(corrected_file, "json", "import json")
+
+        if "pickle" in snippet and "pickle" not in clean_fix:
+            corrected_file = remove_unused_import(corrected_file, "pickle")
 
         try:
             ast.parse(corrected_file)

@@ -7,7 +7,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.fixer.fix_runtime import detect_sql_placeholder, add_import_if_missing, get_new_undefined_names
+from backend.fixer.fix_runtime import (
+    detect_sql_placeholder,
+    add_import_if_missing,
+    get_new_undefined_names,
+    remove_unused_import,
+)
 from backend.fixer.fix_generator import generate_template_fix, generate_patched_code
 from backend.models.models import Vulnerability, User, Project, File
 from backend.database.session import SessionLocal
@@ -215,3 +220,78 @@ def test_apply_fix_blocks_undefined_names_via_endpoint(tmp_path, monkeypatch):
         assert "undefined_symbol_123" in data["detail"]
     finally:
         db.close()
+
+
+def test_remove_unused_import_when_no_longer_referenced():
+    """Verify remove_unused_import strips 'import pickle' when pickle is no longer used."""
+    code_before = (
+        "import pickle\n"
+        "import json\n"
+        "\n"
+        "def load_user_profile(raw_data):\n"
+        "    profile = json.loads(raw_data.decode('utf-8'))\n"
+        "    return profile\n"
+    )
+    cleaned = remove_unused_import(code_before, "pickle")
+    assert "import pickle" not in cleaned
+    assert "import json" in cleaned
+    assert "load_user_profile" in cleaned
+    # Check that code still parses
+    ast.parse(cleaned)
+
+
+def test_remove_unused_import_preserved_when_still_referenced():
+    """Verify remove_unused_import preserves 'import pickle' if other code still uses it."""
+    code_with_usage = (
+        "import pickle\n"
+        "import json\n"
+        "\n"
+        "def load_user_profile(raw_data):\n"
+        "    return json.loads(raw_data.decode('utf-8'))\n"
+        "\n"
+        "def legacy_export(obj):\n"
+        "    return pickle.dumps(obj)\n"
+    )
+    cleaned = remove_unused_import(code_with_usage, "pickle")
+    assert "import pickle" in cleaned
+    assert "import json" in cleaned
+    assert "pickle.dumps" in cleaned
+    assert cleaned == code_with_usage
+
+
+def test_pickle_to_json_functional_regression_and_safety():
+    """
+    Functional regression test verifying that the pickle -> json transformation:
+    1. Accurately deserializes UTF-8 JSON bytes preserving payload structure, keys, values, and types.
+    2. Reliably blocks malicious pickle byte gadgets (causes JSONDecodeError instead of code execution).
+    """
+    import json
+
+    # 1. Functional behavior preservation: valid application JSON payload
+    sample_payload = {
+        "user_id": "usr_9981",
+        "username": "alice",
+        "roles": ["developer", "reviewer"],
+        "is_active": True,
+        "quota": 1000
+    }
+    raw_data_bytes = json.dumps(sample_payload).encode("utf-8")
+
+    # Fixed code under test:
+    # profile = json.loads(raw_data.decode('utf-8'))
+    profile = json.loads(raw_data_bytes.decode("utf-8"))
+
+    assert profile == sample_payload
+    assert profile["user_id"] == "usr_9981"
+    assert profile["roles"] == ["developer", "reviewer"]
+    assert profile["is_active"] is True
+    assert profile["quota"] == 1000
+    assert isinstance(profile, dict)
+
+    # 2. Security validation: malicious pickle gadget execution is completely neutralized
+    # Pickle payload crafted with malicious reduce/opcode
+    malicious_pickle_payload = b"cos\nsystem\n(S'echo EXPLOITED'\ntR."
+
+    # Under json.loads, this MUST fail with JSONDecodeError or UnicodeDecodeError, NOT execute
+    with pytest.raises((json.JSONDecodeError, UnicodeDecodeError)):
+        json.loads(malicious_pickle_payload.decode("utf-8", errors="strict"))

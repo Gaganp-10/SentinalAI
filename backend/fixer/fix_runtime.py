@@ -5,6 +5,7 @@ Provides:
 1. Database driver detection and SQL placeholder selection ('?' for sqlite3, '%s' for psycopg2/PyMySQL).
 2. Missing import insertion (adds 'import os' etc. cleanly after docstrings and __future__ imports).
 3. Undefined-name validation via pyflakes to prevent runtime NameErrors.
+4. Stale import removal (removes 'import <module>' lines that become unused after a fix is applied).
 """
 
 import ast
@@ -146,6 +147,59 @@ def add_import_if_missing(source: str, module_name: str, import_stmt: str = "imp
     stmt_line = import_stmt + "\n"
     lines.insert(insert_idx, stmt_line)
     return "".join(lines)
+
+
+def remove_unused_import(source: str, module_name: str) -> str:
+    """
+    Removes a bare 'import <module_name>' line from source if that module is
+    no longer referenced anywhere in the file after the import line itself.
+
+    Only removes simple 'import <module_name>' statements (not aliased or
+    'from … import' forms).  If the module is still referenced (any occurrence
+    of the identifier in the non-import code), the source is returned unchanged.
+
+    Args:
+        source: Full file contents as a string.
+        module_name: The module whose import should be removed if unused.
+
+    Returns:
+        Modified source with the stale import removed, or original source if
+        the module is still referenced or no matching import line was found.
+    """
+    lines = source.splitlines(keepends=True)
+
+    # Locate the import line(s) to consider removing
+    import_line_indices = []
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        # Match exactly "import <module_name>" (not "import <module_name>_suffix")
+        if stripped == f"import {module_name}" or stripped.startswith(f"import {module_name} ") or stripped.startswith(f"import {module_name}\t"):
+            import_line_indices.append(i)
+
+    if not import_line_indices:
+        return source  # Nothing to remove
+
+    # Check if module_name is referenced outside of import statements
+    referenced = False
+    for i, line in enumerate(lines):
+        if i in import_line_indices:
+            continue
+        stripped = line.strip()
+        # Skip other import lines that mention the module
+        if stripped.startswith("import ") or stripped.startswith("from "):
+            continue
+        # Look for any use of the module name as an identifier
+        if re.search(rf'\b{re.escape(module_name)}\b', line):
+            referenced = True
+            break
+
+    if referenced:
+        return source  # Still in use — leave the import
+
+    # Remove all matching import lines
+    new_lines = [line for i, line in enumerate(lines) if i not in import_line_indices]
+    logger.debug("Removed unused import '%s' from source.", module_name)
+    return "".join(new_lines)
 
 
 def get_new_undefined_names(orig_code: str, patched_code: str) -> Set[str]:

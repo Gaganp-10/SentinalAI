@@ -333,6 +333,11 @@ def apply_vulnerability_fix(
         elif "json." in fix_to_apply:
             new_content = add_import_if_missing(new_content, "json", "import json")
 
+        # Stale import removal: if a dangerous module like 'pickle' was replaced and is no longer used, remove it
+        if "pickle" in vuln.code_snippet and "pickle" not in fix_to_apply:
+            from backend.fixer.fix_runtime import remove_unused_import
+            new_content = remove_unused_import(new_content, "pickle")
+
         # 2. Syntax validation via ast.parse
         try:
             ast.parse(new_content, filename=full_file_path)
