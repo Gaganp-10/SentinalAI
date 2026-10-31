@@ -274,6 +274,7 @@ Preserve the exact leading indentation of the original snippet so it can be repl
 Do NOT include import statements in the snippet (e.g. no 'import json'); any required top-level imports are added automatically.
 Do NOT include markdown formatting (do NOT use ``` or ```python).
 Do NOT include explanations, warnings, comments about what changed, or conversational text.
+If replacing insecure deserialization (such as pickle.loads), use safe JSON deserialization that accepts both bytes and str inputs (e.g. json.loads(data.decode('utf-8') if hasattr(data, 'decode') else data)).
 Output pure, runnable Python code only.
 """
     try:

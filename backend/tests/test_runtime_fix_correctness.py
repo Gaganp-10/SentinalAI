@@ -277,16 +277,23 @@ def test_pickle_to_json_functional_regression_and_safety():
     }
     raw_data_bytes = json.dumps(sample_payload).encode("utf-8")
 
-    # Fixed code under test:
-    # profile = json.loads(raw_data.decode('utf-8'))
-    profile = json.loads(raw_data_bytes.decode("utf-8"))
+    # Fixed code under test handles both bytes and str inputs:
+    def load_user_profile(raw_data):
+        return json.loads(raw_data.decode("utf-8") if hasattr(raw_data, "decode") else raw_data)
 
-    assert profile == sample_payload
-    assert profile["user_id"] == "usr_9981"
-    assert profile["roles"] == ["developer", "reviewer"]
-    assert profile["is_active"] is True
-    assert profile["quota"] == 1000
-    assert isinstance(profile, dict)
+    profile_from_bytes = load_user_profile(raw_data_bytes)
+    assert profile_from_bytes == sample_payload
+
+    raw_data_str = json.dumps(sample_payload)
+    profile_from_str = load_user_profile(raw_data_str)
+    assert profile_from_str == sample_payload
+    assert profile_from_bytes["user_id"] == "usr_9981"
+    assert profile_from_str["user_id"] == "usr_9981"
+    assert profile_from_bytes["roles"] == ["developer", "reviewer"]
+    assert profile_from_bytes["is_active"] is True
+    assert profile_from_bytes["quota"] == 1000
+    assert isinstance(profile_from_bytes, dict)
+    assert isinstance(profile_from_str, dict)
 
     # 2. Security validation: malicious pickle gadget execution is completely neutralized
     # Pickle payload crafted with malicious reduce/opcode

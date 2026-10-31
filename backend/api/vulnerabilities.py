@@ -196,6 +196,14 @@ def regenerate_vulnerability_fix(
     if not corrected_snippet or fix_norm == orig_norm:
         auto_fixable = False
 
+    # Document behaviour change if data format migrated from pickle to json
+    if "pickle" in (vuln.code_snippet or "") and "json" in (corrected_snippet or ""):
+        behaviour_note = "Behaviour change: Deserialization migrated from pickle to JSON. Accepted input format changed from arbitrary Python objects to valid JSON strings or UTF-8 bytes."
+        if vuln.recommendation and behaviour_note not in vuln.recommendation:
+            vuln.recommendation = vuln.recommendation + "\n\n" + behaviour_note
+        elif not vuln.recommendation:
+            vuln.recommendation = behaviour_note
+
     vuln.suggested_fix = corrected_snippet
     vuln.auto_fixable = auto_fixable
     vuln.fix_source = fix_source

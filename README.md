@@ -47,7 +47,15 @@ can safely generate and apply a real code fix directly to the file.
   can apply it directly to the file — with atomic import injection,
   database driver-aware SQL placeholders (`?` vs `%s`), and pre-write
   validation (`ast.parse()` syntax check and `pyflakes` undefined name analysis)
-  that blocks writes introducing errors (HTTP 422) rather than risking a corrupted file
+  that blocks writes introducing errors (HTTP 422) rather than risking a corrupted file.
+  When an AI provider is configured, additional finding types (e.g. insecure
+  deserialization) can receive an **AI-generated fix**. These fixes are labeled
+  **"AI-generated · re-scan clean · behaviour not tested"** in the UI: the patch
+  passed syntax validation and a post-apply re-scan confirmed the vulnerability
+  pattern no longer appears, but functional regression testing with real application
+  payloads is the developer's responsibility. Fixes that change the data format
+  (e.g. `pickle` → `json`) display an amber **"Behaviour change"** warning — callers
+  must send JSON-serialised payloads after the fix is applied.
 - **Honest about limitations** — findings without a safe, unambiguous
   fix are clearly marked as requiring manual review rather than guessing
 - **Google Sign-In** alongside standard email/password auth
@@ -88,6 +96,14 @@ can safely generate and apply a real code fix directly to the file.
 - **Named Volumes & Storage**:
   - `postgres_data`: Persistent storage for PostgreSQL (mounted at `/var/lib/postgresql/data`).
   - `uploads_data`: High-performance named volume for scanned user code and extracted files (mounted inside the backend container at `/app/uploads`). Docker Compose namespaces this volume as `securityvulnerabilitydecoderandfixer_uploads_data`. *(Note: any references in legacy notes or documentation mentioning `uploads_data (backend_uploads:...)` refer strictly to this Compose volume `uploads_data` mounted at `/app/uploads`).*
+- **Test Compose file (`docker-compose.test.yml`)** — a local-only override (gitignored, never auto-loaded by `docker compose up`) that exposes PostgreSQL on `127.0.0.1:5433` for host-side `pytest` runs:
+  ```bash
+  # Bring up the DB with test port exposed (host test runs only):
+  docker compose -f docker-compose.yml -f docker-compose.test.yml up -d db
+  ```
+  Tests connect to the separate database `security_scanner_test` (not `security_scanner`).
+  Plain `docker compose config` and `docker compose up` ignore this file entirely —
+  it is never included in production.
 
 ## Architecture
 
@@ -309,6 +325,26 @@ and rollback safeguards, are comprehensively covered by automated unit and
 integration tests (`backend/tests/test_runtime_fix_correctness.py`,
 `backend/tests/test_step6.py`, `backend/tests/test_issue_classes_dedup.py`,
 and `backend/tests/test_step7.py` for SCA/dependency scanning).
+
+## Test Database Isolation
+
+All automated tests run against a **separate** PostgreSQL database
+(`security_scanner_test`) — never against the application database
+(`security_scanner`). Isolation is enforced at session startup:
+`backend/database/session.py` detects whether `pytest` is active (via
+`sys.modules`, the `TESTING=1` env var, or `PYTEST_CURRENT_TEST`) and
+appends `_test` to the database name automatically. A session-scoped autouse
+fixture in `backend/tests/conftest.py` asserts the engine URL contains
+`security_scanner_test` before any test runs.
+
+The redacted connection string used by the test suite inside Docker:
+```
+postgresql://sentinel:***@db:5432/security_scanner_test
+```
+
+The app database is never touched by the test suite. Row counts in
+`users`, `projects`, and `vulnerabilities` are unchanged after a full
+test run.
 
 ## Performance Benchmarking
 

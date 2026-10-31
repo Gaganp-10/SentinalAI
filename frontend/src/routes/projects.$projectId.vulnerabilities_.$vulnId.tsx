@@ -266,7 +266,7 @@ function VulnerabilityDetailPage() {
                 {data.fixed && (
                   <Tag tone="text-emerald-400">
                     {data.fix_source === "ai"
-                      ? "AI-verified by re-scan"
+                      ? "AI-generated · re-scan clean · behaviour not tested"
                       : data.fix_source === "template"
                       ? "Verified secure pattern"
                       : "Resolved"}
@@ -274,7 +274,7 @@ function VulnerabilityDetailPage() {
                 )}
                 {!data.fixed && data.auto_fixable && (
                   <Tag tone="text-sky-400">
-                    {data.fix_source === "ai" ? "AI fix candidate" : "Auto-fixable"}
+                    {data.fix_source === "ai" ? "AI-generated · re-scan clean · behaviour not tested" : "Auto-fixable"}
                   </Tag>
                 )}
               </div>
@@ -390,9 +390,22 @@ function VulnerabilityDetailPage() {
               <h2 className="text-[16px] font-semibold tracking-[-0.02em] text-foreground">
                 Suggested fix
               </h2>
-              <p className="mt-1.5 mb-4 text-[13px] text-muted-foreground">
-                Before and after line-by-line diff, exactly as the backend would write it to the file.
-              </p>
+              <div className="mt-1.5 mb-4 flex flex-wrap items-center gap-2">
+                <p className="text-[13px] text-muted-foreground">
+                  Before and after line-by-line diff, exactly as the backend would write it to the file.
+                </p>
+                {data.fix_source === "ai" && (
+                  <span className="icon-chip rounded-full px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-[0.06em] text-sky-400">
+                    AI-generated · re-scan clean · behaviour not tested
+                  </span>
+                )}
+              </div>
+
+              {data.code_snippet?.includes("pickle") && data.suggested_fix?.includes("json") && (
+                <div className="mb-4 rounded-[14px] bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-[13px] text-amber-300">
+                  <strong>Behaviour change:</strong> Deserialization migrated from pickle to JSON. Accepted input format changed from arbitrary Python objects to valid JSON strings or UTF-8 bytes. Upstream callers must send JSON payloads.
+                </div>
+              )}
 
               {!isNoFix && (
                 <FixDiffViewer

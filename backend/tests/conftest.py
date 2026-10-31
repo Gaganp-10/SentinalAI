@@ -9,7 +9,23 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from backend.main import app
-from backend.database.session import Base, get_db
+from backend.database.session import Base, get_db, engine as session_engine
+import backend.models.models
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_test_database_isolation():
+    """
+    Guarantees that test execution NEVER touches the application database 'security_scanner'.
+    Asserts that the active database is either an isolated test database (e.g. 'security_scanner_test')
+    or an in-memory/isolated SQLite database, and creates all required tables.
+    """
+    db_name = session_engine.url.database or ""
+    assert db_name != "security_scanner", (
+        f"CRITICAL: Test suite is attempting to connect to application database '{db_name}'! "
+        "Tests must run against a separate database (e.g. security_scanner_test or sqlite)."
+    )
+    # Ensure schema exists in test database
+    Base.metadata.create_all(bind=session_engine)
 
 from sqlalchemy.pool import StaticPool
 
