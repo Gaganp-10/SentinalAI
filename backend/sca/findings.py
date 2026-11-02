@@ -767,6 +767,27 @@ def build_copilot_context_for_dep(
             " automatically recommended to cover all advisories)"
         )
 
+    # --- Within-branch upgrade path (for major-version jumps) ---
+    inst_mm = installed_major_minor(ecosystem, dep_version)
+    if recommended_version and inst_mm is not None:
+        rec_mm = installed_major_minor(ecosystem, recommended_version)
+        if rec_mm is not None and rec_mm[0] > inst_mm[0]:
+            wb_ver, wb_count = compute_within_branch_version(
+                ecosystem, fixed_by_advisory, dep_version, inst_mm
+            )
+            wb_branch = f"{inst_mm[0]}.{inst_mm[1]}.x"
+            if wb_ver:
+                lines.append(
+                    f"  Within-branch alternative ({wb_branch}): {wb_ver}"
+                    f" (fixes {wb_count} of {len(advisory_details)} advisories"
+                    f" without a major-version change)"
+                )
+            else:
+                lines.append(
+                    f"  Within-branch alternative ({wb_branch}): None"
+                    f" (0 of {len(advisory_details)} advisories have fixes in this branch)"
+                )
+
     # --- Missing-fix advisories ---
     if missing_fix_advisories:
         lines.append(

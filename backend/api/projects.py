@@ -7,6 +7,7 @@ from backend.database.session import get_db
 from backend.models.models import Project, User
 from backend.models.schemas import ProjectCreate, ProjectOut
 from backend.api.auth import get_current_user
+from backend.utils.config import settings
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -19,6 +20,14 @@ def create_project(
     """
     Creates a new security scan project for the current authenticated user.
     """
+    if settings.MAX_PROJECTS_PER_USER is not None and settings.MAX_PROJECTS_PER_USER >= 0:
+        existing_count = db.query(Project).filter(Project.user_id == current_user.id).count()
+        if existing_count >= settings.MAX_PROJECTS_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Project limit reached. Maximum allowed projects per user is {settings.MAX_PROJECTS_PER_USER}."
+            )
+
     project = Project(
         project_name=project_in.project_name,
         user_id=current_user.id

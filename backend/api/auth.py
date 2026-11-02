@@ -144,6 +144,12 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
     """
     Registers a new user account.
     """
+    if not settings.ALLOW_SIGNUP:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is currently disabled."
+        )
+
     # Check if username exists
     existing_username = db.query(User).filter(User.username == user_in.username).first()
     if existing_username:
@@ -236,6 +242,12 @@ async def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == email).first()
 
     if not user:
+        if not settings.ALLOW_SIGNUP:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Public registration is currently disabled."
+            )
+
         # Derive a unique username from the Google display name or email local-part
         base_username = re.sub(r"[^\w]", "", name.lower().replace(" ", "_"))
         if not base_username:

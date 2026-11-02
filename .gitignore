@@ -25,4 +25,6 @@ backend/scripts/step8_evidence.py
 backend/tests/test_archives/
 docker-compose.override.yml
 docker-compose.test.yml
+backups/
+*.dump
 

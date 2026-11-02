@@ -1,0 +1,23 @@
+# Caddyfile for SentinelAI Production Deployment
+{
+    admin off
+    email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+    {$TLS_INTERNAL:}
+
+    request_body {
+        max_size 55MB
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "frame-ancestors 'none';"
+        -Server
+    }
+
+    reverse_proxy frontend:80
+}

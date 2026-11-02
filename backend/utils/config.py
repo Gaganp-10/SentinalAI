@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Optional
+from typing import List, Optional, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator, model_validator
 
@@ -68,7 +68,13 @@ class Settings(BaseSettings):
     OSV_API_BASE_URL: str = "https://api.osv.dev"
 
     # CORS configuration
-    ALLOWED_ORIGINS: List[str] = ["*"]
+    ALLOWED_ORIGINS: Union[List[str], str] = ["*"]
+
+    # Abuse controls
+    ALLOW_SIGNUP: bool = True
+    MAX_PROJECTS_PER_USER: Optional[int] = None
+    MAX_DAILY_UPLOADS_PER_USER: Optional[int] = None
+    MAX_DAILY_UPLOAD_MB_PER_USER: Optional[int] = None
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":

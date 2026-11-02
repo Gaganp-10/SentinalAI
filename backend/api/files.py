@@ -6,10 +6,11 @@ import zipfile
 import shutil
 import logging
 import tempfile
+import time
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File as FastAPIFile, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from uuid import UUID
 
 from backend.database.session import get_db
@@ -22,6 +23,49 @@ from backend.parser.language_detect import detect_language, is_manifest_filename
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["Files"])
+
+# ─── Daily per-user upload abuse tracker ──────────────────────────────────────
+# user_id -> list of (timestamp_epoch, byte_size)
+_user_daily_upload_history: Dict[UUID, List[Tuple[float, int]]] = {}
+
+def check_user_daily_upload_cap(user_id: UUID, file_size: int = 0):
+    """
+    Validates user against MAX_DAILY_UPLOADS_PER_USER and MAX_DAILY_UPLOAD_MB_PER_USER.
+    Prunes records older than 24 hours.
+    """
+    now = time.time()
+    cutoff = now - 86400.0
+
+    history = _user_daily_upload_history.get(user_id, [])
+    history = [entry for entry in history if entry[0] >= cutoff]
+    _user_daily_upload_history[user_id] = history
+
+    if settings.MAX_DAILY_UPLOADS_PER_USER is not None and settings.MAX_DAILY_UPLOADS_PER_USER >= 0:
+        if len(history) >= settings.MAX_DAILY_UPLOADS_PER_USER:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Daily upload request limit exceeded ({settings.MAX_DAILY_UPLOADS_PER_USER} uploads per 24 hours)."
+            )
+
+    if settings.MAX_DAILY_UPLOAD_MB_PER_USER is not None and settings.MAX_DAILY_UPLOAD_MB_PER_USER >= 0:
+        current_bytes = sum(entry[1] for entry in history)
+        max_bytes = settings.MAX_DAILY_UPLOAD_MB_PER_USER * 1024 * 1024
+        if current_bytes + file_size > max_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Daily upload volume limit exceeded ({settings.MAX_DAILY_UPLOAD_MB_PER_USER} MB per 24 hours)."
+            )
+
+def record_user_upload(user_id: UUID, file_size: int = 0):
+    """Records a completed upload for the daily rate limiter."""
+    now = time.time()
+    if user_id not in _user_daily_upload_history:
+        _user_daily_upload_history[user_id] = []
+    _user_daily_upload_history[user_id].append((now, file_size))
+
+def reset_upload_limits():
+    """Helper for tests to reset in-memory history."""
+    _user_daily_upload_history.clear()
 
 # ─── Step 4 limits (canonical values, read from config) ────────────────────────
 # MAX_ZIP_FILES=5000          — counted on KEPT files only (after junk/skip)
@@ -146,6 +190,9 @@ def upload_files(
 
     # Verify project ownership
     project = check_project_ownership(db, project_id, current_user.id)
+
+    # Check daily upload rate limits for user
+    check_user_daily_upload_cap(current_user.id)
 
     # Setup safe base directory path for uploads
     base_upload_path = os.path.abspath(settings.UPLOAD_DIR)
@@ -572,6 +619,12 @@ def upload_files(
                 db.refresh(f)
             except Exception:
                 pass
+
+    # Record completed upload in daily rate limiter
+    total_uploaded_bytes = sum(getattr(f, "size", 0) for f in saved_files)
+    # Validate volume limit against total bytes just saved
+    check_user_daily_upload_cap(current_user.id, total_uploaded_bytes)
+    record_user_upload(current_user.id, total_uploaded_bytes)
 
     return {
         "accepted": saved_files,
