@@ -1,0 +1,34 @@
+vulnerabilities:
+  - id: CVE-2025-47273
+    statement: Static SBOM metadata embedded in pip CycloneDX bom; active runtime environment has setuptools>=78.1.1 (84.2.1). https://osv.dev/vulnerability/CVE-2025-47273
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-59951
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+    statement: Unreachable; Semgrep CLI runs offline without MCP network listener. https://osv.dev/vulnerability/CVE-2026-59951
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-116685
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+    statement: Unreachable; MCP transport layer inactive during static analysis. https://osv.dev/vulnerability/CVE-2026-116685
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-116684
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+    statement: Unreachable; no external MCP clients or untrusted JSON-RPC streams. https://osv.dev/vulnerability/CVE-2026-116684
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-116686
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+    statement: Unreachable; remote MCP server negotiation is never invoked. https://osv.dev/vulnerability/CVE-2026-116686
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-114603
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/opentelemetry_api-1.37.0.dist-info/METADATA
+    statement: Unreachable; telemetry disabled via --metrics=off and --disable-version-check. https://osv.dev/vulnerability/CVE-2026-114603
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-126360
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/opentelemetry_api-1.37.0.dist-info/METADATA
+    statement: Unreachable; metric serialization/span propagation buffers not executed. https://osv.dev/vulnerability/CVE-2026-126360
+    expired_at: 2026-12-31T23:59:59Z

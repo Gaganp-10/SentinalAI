@@ -9,7 +9,7 @@ def generate_html_report(project, scan, vulnerabilities) -> str:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     templates_dir = os.path.join(current_dir, "templates")
     
-    env = Environment(loader=FileSystemLoader(templates_dir))
+    env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
     template = env.get_template("report.html")
     
     score = calculate_security_score(vulnerabilities)

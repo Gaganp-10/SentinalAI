@@ -1,0 +1,26 @@
+[Unit]
+Description=SentinelAI Nightly Automated Backup
+Requires=docker.service
+After=docker.service
+OnFailure=sentinel-backup-failure@%n.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/sentinel-ai
+EnvironmentFile=-/home/deploy/sentinel-ai/backup.env
+ExecStart=/home/deploy/sentinel-ai/deploy/backup.sh
+StandardOutput=journal
+StandardError=journal
+
+# Basic systemd security hardening
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/deploy/sentinel-ai/backups
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+NoNewPrivileges=true
+LockPersonality=true

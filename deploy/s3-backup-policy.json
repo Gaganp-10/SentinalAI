@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSentinelBackupBucketList",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BACKUP_BUCKET_NAME",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "sentinel-backups/*",
+            "sentinel-backups"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "AllowSentinelBackupPutObjectOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BACKUP_BUCKET_NAME/sentinel-backups/*"
+    }
+  ]
+}

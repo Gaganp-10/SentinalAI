@@ -207,8 +207,10 @@ def _send_smtp(
                     smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                 smtp.send_message(msg)
         else:
-            # Plain SMTP (or implicit TLS via smtplib.SMTP_SSL)
-            with smtplib.SMTP_SSL(
+            # Plain SMTP (e.g. local mailpit / internal mail relay on port 1025/25)
+            # Use SMTP_SSL only if port is 465 (implicit SSL)
+            smtp_cls = smtplib.SMTP_SSL if settings.SMTP_PORT == 465 else smtplib.SMTP
+            with smtp_cls(
                 settings.SMTP_HOST, settings.SMTP_PORT, timeout=_SMTP_TIMEOUT_S
             ) as smtp:
                 if settings.SMTP_USER and settings.SMTP_PASSWORD:

@@ -103,12 +103,15 @@ SMTP_USER=postmaster@sentinel.yourdomain.com
 SMTP_PASSWORD=your-smtp-password
 SMTP_FROM=noreply@sentinel.yourdomain.com
 SMTP_USE_TLS=true
+ACCESS_TOKEN_EXPIRE_MINUTES=120
 
-# Abuse Controls
-ALLOW_SIGNUP=true
+# Production Access & Abuse Controls
+ALLOW_SIGNUP=false
+GOOGLE_AUTH_ALLOWLIST=
 MAX_PROJECTS_PER_USER=50
 MAX_DAILY_UPLOADS_PER_USER=100
 MAX_DAILY_UPLOAD_MB_PER_USER=500
+MAX_USER_STORAGE_MB=500
 ```
 
 ### Step 1.5: Start the Production Stack
@@ -121,6 +124,15 @@ Verify service health:
 docker compose --env-file docker.env -f docker-compose.prod.yml ps
 ```
 All four services (`caddy`, `frontend`, `backend`, `db`) should report `healthy` or `running`.
+
+### Step 1.6: Create Initial Admin User
+Because `ALLOW_SIGNUP=false` is enforced in production, create the initial administrative account using the CLI script (which prompts securely for the password without echoing):
+```bash
+./deploy/create-user.sh --username admin --email admin@yourdomain.com
+```
+
+### Database Architecture & Schema Migrations
+Database schema creation and column migrations run automatically and idempotently on backend startup via `backend/database/migration.py` using SQLAlchemy reflection and direct SQL. No external migration framework (such as Alembic) is used.
 
 ---
 
@@ -201,23 +213,60 @@ docker stats --no-stream
 
 ---
 
-## 5. Automated Backups & S3 Offsite Sync
+## 5. Automated Backups, systemd Timer & S3 Offsite Sync
 
-### Automated Nightly Cron
-Set up a nightly backup at 02:00 UTC under the `deploy` user:
+### Automated Backups via systemd Timer
+
+SentinelAI uses a native `systemd` service and timer for reliable, randomized, and hardened backup execution.
+
+#### Step 5.1: Install and Enable the systemd Timer
+As root (or with `sudo`):
 ```bash
-crontab -e
-```
-Add the following entry:
-```cron
-0 2 * * * cd /home/deploy/sentinel-ai && ./deploy/backup.sh >> /home/deploy/backups/backup.log 2>&1
+# 1. Copy unit and timer definitions to systemd directory
+sudo cp /home/deploy/sentinel-ai/deploy/sentinel-backup.service /etc/systemd/system/
+sudo cp /home/deploy/sentinel-ai/deploy/sentinel-backup.timer /etc/systemd/system/
+
+# 2. Reload systemd daemon
+sudo systemctl daemon-reload
+
+# 3. Enable and start the backup timer
+sudo systemctl enable --now sentinel-backup.timer
+
+# 4. Verify timer is active and scheduled
+sudo systemctl list-timers --all | grep sentinel-backup
 ```
 
-### S3 Offsite Sync (Optional)
-To automatically archive backups to a private AWS S3 bucket:
-1. Attach an AWS IAM Role to the EC2 instance with `s3:PutObject` permission on `arn:aws:s3:::your-backup-bucket/*`.
-2. Add `S3_BUCKET=your-backup-bucket` to `docker.env`.
-3. `deploy/backup.sh` will upload encrypted backup artifacts (`--sse AES256`) and prune local backups older than 7 days.
+The output will confirm next execution at `02:00 UTC` with a randomized jitter of up to 30 minutes (`RandomizedDelaySec=1800`) to avoid load spikes.
+
+#### Step 5.2: Configure Optional S3 Offsite Sync
+To sync backups to AWS S3, create `/home/deploy/sentinel-ai/backup.env` (owned by `deploy:deploy`, `chmod 600`):
+```bash
+cat << 'EOF' > /home/deploy/sentinel-ai/backup.env
+S3_BUCKET=your-private-sentinel-backup-bucket
+EOF
+chown deploy:deploy /home/deploy/sentinel-ai/backup.env
+chmod 600 /home/deploy/sentinel-ai/backup.env
+```
+
+### AWS S3 & IAM Least-Privilege Architecture
+
+#### 1. EC2 Instance Profile (Write-Only Append Policy)
+Attach an IAM role to the EC2 instance using the restricted policy defined in `deploy/s3-backup-policy.json`.
+- **Allowed Actions:** `s3:PutObject` and `s3:ListBucket` (prefix-scoped).
+- **Prohibited Actions:** `s3:GetObject` and `s3:DeleteObject` are explicitly excluded from the instance profile. This ensures that even in the event of an EC2 compromise or ransomware attack, the attacker cannot delete, alter, or exfiltrate historic offsite backups.
+
+#### 2. Separate Admin Disaster Recovery Policy
+The `deploy/s3-restore-policy.json` contains `s3:GetObject` and `s3:DeleteObject` permissions and is attached only to administrative IAM roles or temporary recovery credentials when executing an offsite restore.
+
+#### 3. S3 Bucket Hardening Checklist
+Configure your AWS S3 backup bucket with the following baseline protections:
+1. **Block Public Access:** Enable all four Amazon S3 Block Public Access settings at both the bucket and account level.
+2. **Bucket Versioning:** Enable Versioning on the bucket. If an object is overwritten or marked deleted, previous versions remain immutable.
+3. **Lifecycle Rule (30-day retention):** Create an S3 Lifecycle Rule targeting the `sentinel-backups/` prefix:
+   - Expire current versions after 30 days.
+   - Permanently delete noncurrent versions after 30 days.
+   - Delete expired object delete markers and abort incomplete multipart uploads after 7 days.
+4. **Server-Side Encryption (SSE):** Enforce default encryption using SSE-S3 (`AES256`) or AWS KMS (`aws:kms`). `backup.sh` automatically passes `--sse AES256` during `aws s3 cp`.
 
 ---
 

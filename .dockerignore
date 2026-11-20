@@ -1,24 +1,33 @@
-# ── Project-root .dockerignore ──────────────────────────────────────────────
-# This file limits what gets sent to the Docker daemon as build context.
-# Since each service uses a subdirectory as its context (./backend, ./frontend),
-# this root file mainly prevents the daemon from seeing irrelevant top-level items
-# if the root is ever used as a build context directly.
-
 # Version control
 .git
 .gitignore
 
-# Python environments (never bake local venvs into images)
-.venv
-venv
+# Environment files and credentials
+docker.env*
+.env*
+*.env
+backend/.env*
+frontend/.env*
+
+# Backups and storage
+backups
+uploads
+uploads/
+
+# Evidence and scenario data
+docs/evidence
+scenario_data.json
+scripts
+
+# Dependencies and caches
+node_modules
+frontend/node_modules
 __pycache__
 *.pyc
 *.pyo
 *.pyd
-
-# Node
-node_modules
-frontend/node_modules
+.venv
+venv
 
 # Build artefacts
 frontend/dist
@@ -27,32 +36,15 @@ frontend/.vinxi
 frontend/.nitro
 frontend/.tanstack
 
-# Local uploads (can contain user data / test files — not for images)
-uploads/
-
-# Local databases and test artefacts
+# Local databases and archives
 *.db
 test.db
 backend/test.db
-
-# Local environment files (secrets must not be baked into images)
-.env
-backend/.env
-frontend/.env
-docker.env
-
-# Large archives
 *.zip
 backend.zip
 
-# IDE / OS noise
+# IDE and OS
 .vscode
 .idea
 .DS_Store
 Thumbs.db
-
-# Test artefacts and screenshots
-frontend/phase1-screenshots
-frontend/phase2-screenshots
-frontend/phase3-screenshots
-frontend/test_screenshots

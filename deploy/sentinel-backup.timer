@@ -1,0 +1,10 @@
+[Unit]
+Description=Run SentinelAI Automated Backup Nightly at 02:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+RandomizedDelaySec=1800
+Persistent=true
+
+[Install]
+WantedBy=timers.target

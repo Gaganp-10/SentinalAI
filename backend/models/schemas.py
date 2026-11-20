@@ -38,6 +38,10 @@ class LoginRequest(BaseModel):
 class GoogleAuthRequest(BaseModel):
     access_token: str
 
+class DeletionConfirmationRequest(BaseModel):
+    password: Optional[str] = None
+    google_token: Optional[str] = None
+
 # --- Password Reset Schemas ---
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
@@ -165,9 +169,17 @@ class ScanHistoryOut(BaseModel):
     warnings: Optional[List[str]] = None
     dependency_summary: Optional[DependencySummary] = None
     engines_run: Optional[List[str]] = None
+    incomplete: bool = False
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="after")
+    def compute_incomplete(self) -> "ScanHistoryOut":
+        REQUIRED_ENGINES = {"bandit", "ast", "semgrep"}
+        engines = set(self.engines_run or [])
+        self.incomplete = not REQUIRED_ENGINES.issubset(engines)
+        return self
 
     @field_validator("engines_run", mode="before")
     @classmethod

@@ -1,0 +1,50 @@
+# Version control
+.git
+.gitignore
+
+# Environment files and credentials
+docker.env*
+.env*
+*.env
+backend/.env*
+frontend/.env*
+
+# Backups and storage
+backups
+uploads
+uploads/
+
+# Evidence and scenario data
+docs/evidence
+scenario_data.json
+scripts
+
+# Dependencies and caches
+node_modules
+frontend/node_modules
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+
+# Build artefacts
+frontend/dist
+frontend/.output
+frontend/.vinxi
+frontend/.nitro
+frontend/.tanstack
+
+# Local databases and archives
+*.db
+test.db
+backend/test.db
+*.zip
+backend.zip
+
+# IDE and OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db

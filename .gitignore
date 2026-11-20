@@ -2,6 +2,11 @@
 backend/.env
 frontend/.env
 docker.env
+docker.env*
+!docker.env.example
+scenario_data.json
+*.local
+run_round5_verification.py
 uploads/
 __pycache__/
 *.pyc
@@ -27,4 +32,11 @@ docker-compose.override.yml
 docker-compose.test.yml
 backups/
 *.dump
+docs/evidence/
 
+
+__pycache__/
+*.pyc
+scripts/evidence/
+docs/evidence/
+backups/

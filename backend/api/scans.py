@@ -19,8 +19,21 @@ router = APIRouter(tags=["Scans"])
 logger = logging.getLogger(__name__)
 
 import json
+import concurrent.futures
 from backend.ai.explainer import generate_vulnerability_explanation
 from backend.fixer.fix_generator import generate_patched_code
+from backend.ai.provider import FallbackTemplateProvider
+
+_SEV_PRIORITY = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+def _run_scan_engines(project_dir: str, engine_timeout: int = None):
+    from backend.detectors.orchestrator import Orchestrator
+    from backend.sca.scanner import scan_dependencies
+
+    orchestrator = Orchestrator()
+    code_findings = orchestrator.scan_project(project_dir, engine_timeout=engine_timeout)
+    dep_findings, sca_warnings, dep_summary = scan_dependencies(project_dir)
+    return orchestrator, code_findings, dep_findings, sca_warnings, dep_summary
 
 def run_background_scan(project_id: UUID, scan_history_id: UUID):
     """
@@ -44,18 +57,33 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
         
         all_warnings: List[str] = []
 
-        # 1. Run the code scan orchestrator
-        from backend.detectors.orchestrator import Orchestrator
-        orchestrator = Orchestrator()
-        code_findings = orchestrator.scan_project(project_dir)
-        all_warnings.extend(orchestrator.warnings)
+        # Enforce scan timeout. SCANNER_TIMEOUT_SECONDS applies per-engine (a single engine
+        # timing out yields completed+warnings, not failed). SCAN_TIMEOUT_SECONDS is the
+        # hard outer wall for the entire scan pipeline.
+        engine_timeout = settings.SCANNER_TIMEOUT_SECONDS or None
+        outer_timeout = settings.SCAN_TIMEOUT_SECONDS or 300
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_run_scan_engines, project_dir, engine_timeout)
+                orchestrator, code_findings, dep_findings, sca_warnings, dep_summary = future.result(timeout=outer_timeout)
+        except concurrent.futures.TimeoutError:
+            # Outer wall hit: entire scan pipeline exceeded the hard limit.
+            # Set to 'completed' with a warning so the UI renders findings (there are none)
+            # and shows the warning badge — 'failed' is reserved for infrastructure errors.
+            logger.error(f"Scan {scan_history_id} exceeded outer timeout limit of {outer_timeout}s")
+            scan.status = "completed"
+            scan.warnings = json.dumps([f"Scan timed out after exceeding {outer_timeout}s limit. No findings recorded."])
+            scan.engines_run = json.dumps([])
+            scan.total_issues = 0
+            db.commit()
+            return
 
-        # 2. Run Software Composition Analysis (SCA)
-        from backend.sca.scanner import scan_dependencies
-        dep_findings, sca_warnings, dep_summary = scan_dependencies(project_dir)
+        all_warnings.extend(orchestrator.warnings)
         all_warnings.extend(sca_warnings)
 
         all_findings = code_findings + dep_findings
+        # Prioritize findings by severity so top findings receive AI explanations
+        all_findings.sort(key=lambda f: _SEV_PRIORITY.get((f.severity or "").lower(), 5))
         
         # 3. Clear old vulnerabilities for this project's files to allow fresh scans
         project_files = db.query(File).filter(File.project_id == project_id).all()
@@ -69,12 +97,11 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
         medium_count = 0
         low_count = 0
         
-        from backend.ai.explainer import generate_vulnerability_explanation
-        from backend.fixer.fix_generator import generate_patched_code
-        
         # 4. Assign fingerprints and process each unique finding
         fingerprints = assign_fingerprints(all_findings)
         scan_findings_to_insert = []
+        ai_explanations_count = 0
+        max_ai_explanations = settings.MAX_AI_EXPLANATIONS_PER_SCAN if settings.MAX_AI_EXPLANATIONS_PER_SCAN is not None else 10
 
         for idx, finding in enumerate(all_findings):
             norm_path = os.path.normpath(finding.file_path).replace("\\", "/")
@@ -108,8 +135,18 @@ def run_background_scan(project_id: UUID, scan_history_id: UUID):
                     except Exception as file_err:
                         logger.warning(f"Could not read {full_file_path} content: {file_err}")
                 
-                # Generate AI explanation and fix
-                explanation = generate_vulnerability_explanation(finding)
+                # Generate AI explanation (capped by MAX_AI_EXPLANATIONS_PER_SCAN) and fix
+                if ai_explanations_count < max_ai_explanations:
+                    explanation = generate_vulnerability_explanation(finding)
+                    ai_explanations_count += 1
+                else:
+                    explanation = FallbackTemplateProvider().explain(
+                        type_name=finding.type,
+                        description=finding.description,
+                        severity=finding.severity,
+                        cwe_id=finding.cwe_id,
+                        code_snippet=finding.code_snippet
+                    )
                 _, corrected_snippet, _, auto_fixable, fix_source = generate_patched_code(finding, full_file_content)
                 orig_norm = " ".join((finding.code_snippet or "").split())
                 fix_norm = " ".join((corrected_snippet or "").split())
@@ -264,6 +301,15 @@ def trigger_scan(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Project has no uploaded files to scan. Upload files first."
         )
+
+    # Enforce global scan concurrency limit
+    if settings.MAX_CONCURRENT_SCANS is not None and settings.MAX_CONCURRENT_SCANS > 0:
+        active_scans = db.query(ScanHistory).filter(ScanHistory.status.in_(["pending", "running"])).count()
+        if active_scans >= settings.MAX_CONCURRENT_SCANS:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Scan concurrency limit reached ({settings.MAX_CONCURRENT_SCANS} active scans). Please wait for active scans to finish."
+            )
 
     # Register scan history entry
     scan = ScanHistory(

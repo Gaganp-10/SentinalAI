@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from jose import jwt, JWTError
+import jwt as pyjwt
+from jwt.exceptions import InvalidTokenError as JWTError
 from pydantic import ValidationError
 import httpx
 import re
@@ -20,6 +22,7 @@ from backend.models.schemas import (
     Token,
     LoginRequest,
     GoogleAuthRequest,
+    DeletionConfirmationRequest,
     ForgotPasswordRequest,
     ResetPasswordRequest,
 )
@@ -35,6 +38,7 @@ logger = logging.getLogger(__name__)
 # a centralized store (e.g., Redis) should be used.
 _reset_rate_limit_lock = threading.Lock()
 _reset_rate_limit_records: dict[str, list[float]] = {}
+_login_failures: dict[tuple[str, str], list[float]] = {}
 
 def _check_and_record_rate_limit(key: str, limit: int, window_seconds: int = 3600) -> bool:
     """
@@ -53,11 +57,23 @@ def _check_and_record_rate_limit(key: str, limit: int, window_seconds: int = 360
             return False
         return True
 
+def reset_auth_rate_limits():
+    """Helper for unit tests to reset in-memory auth rate limit state."""
+    with _reset_rate_limit_lock:
+        _reset_rate_limit_records.clear()
+        _login_failures.clear()
+
 def _get_client_ip(request: Request) -> str:
+    """
+    Extracts the client IP address. When behind a reverse proxy (Caddy),
+    uses the verified remote address from X-Forwarded-For (rightmost proxy hop).
+    """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client and request.client.host:
+        ips = [ip.strip() for ip in forwarded.split(",") if ip.strip()]
+        if ips:
+            return ips[-1]
+    if request.client and request.client.host and request.client.host != "testclient":
         return request.client.host
     return "127.0.0.1"
 
@@ -119,7 +135,12 @@ def get_current_user(db: Session = Depends(get_db), credentials: HTTPAuthorizati
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        payload = pyjwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=["HS256"],
+            options={"require": ["exp", "sub"]},
+        )
         user_id_str: str = payload.get("sub")
         if user_id_str is None:
             raise credentials_exception
@@ -140,7 +161,7 @@ def get_current_user(db: Session = Depends(get_db), credentials: HTTPAuthorizati
 
 
 @router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def signup(user_in: UserCreate, db: Session = Depends(get_db)):
+def signup(user_in: UserCreate, request: Request, db: Session = Depends(get_db)):
     """
     Registers a new user account.
     """
@@ -148,6 +169,22 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Public registration is currently disabled."
+        )
+
+    client_ip = _get_client_ip(request)
+    if not _check_and_record_rate_limit(f"signup:ip:{client_ip}", limit=settings.AUTH_RATE_LIMIT_SIGNUP_PER_IP, window_seconds=3600):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many signup attempts from this IP address. Please try again later."
+        )
+
+    norm_username = user_in.username.strip().lower()
+    norm_email = user_in.email.strip().lower()
+    if not _check_and_record_rate_limit(f"signup:account:{norm_username}", limit=settings.AUTH_RATE_LIMIT_SIGNUP_PER_ACCOUNT, window_seconds=3600) or \
+       not _check_and_record_rate_limit(f"signup:account:{norm_email}", limit=settings.AUTH_RATE_LIMIT_SIGNUP_PER_ACCOUNT, window_seconds=3600):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many signup attempts for this account. Please try again later."
         )
 
     # Check if username exists
@@ -179,20 +216,74 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(login_data: LoginRequest, db: Session = Depends(get_db)):
+def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """
     Authenticates a user via JSON request body and returns a JWT access token.
+    Enforces IP-based and Account-based rate limits alongside progressive exponential delay
+    keyed on (account, IP) for repeated failures.
     """
+    client_ip = _get_client_ip(request)
+    norm_account = login_data.username.strip().lower()
+
+    # 1. IP-level rate limiting
+    if not _check_and_record_rate_limit(f"login:ip:{client_ip}", limit=settings.AUTH_RATE_LIMIT_LOGIN_PER_IP, window_seconds=300):
+        logger.warning("Rate limit exceeded for IP %s: too many login attempts", client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts from this IP address. Please try again later."
+        )
+
+    # 2. Account-level rate limiting across multiple IPs
+    if not _check_and_record_rate_limit(f"login:account:{norm_account}", limit=settings.AUTH_RATE_LIMIT_LOGIN_PER_ACCOUNT, window_seconds=300):
+        logger.warning("Rate limit exceeded for account '%s' from IP %s", norm_account, client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts for this account. Please try again later."
+        )
+
+    # 3. Progressive delay keyed on (account, IP)
+    now = time.time()
+    with _reset_rate_limit_lock:
+        fail_history = [ts for ts in _login_failures.get((norm_account, client_ip), []) if ts > now - 900]
+        if fail_history:
+            fail_count = len(fail_history)
+            if fail_count >= 3:
+                delay = min(60.0, 2.0 ** (fail_count - 3))
+                elapsed = now - fail_history[-1]
+                if elapsed < delay:
+                    remaining = delay - elapsed
+                    logger.warning(
+                        "Progressive delay active for account '%s' from IP '%s' (failure count %d). Remaining wait: %.1fs",
+                        norm_account, client_ip, fail_count, remaining
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=f"Too many failed login attempts. Progressive delay active. Please wait {int(remaining) + 1} seconds before trying again."
+                    )
+
     # Find user by username or email
     user = db.query(User).filter(
         (User.username == login_data.username) | (User.email == login_data.username)
     ).first()
     
     if not user or not user.hashed_password or not verify_password(login_data.password, user.hashed_password):
+        with _reset_rate_limit_lock:
+            cur = [ts for ts in _login_failures.get((norm_account, client_ip), []) if ts > now - 900]
+            cur.append(now)
+            _login_failures[(norm_account, client_ip)] = cur
+            fail_count = len(cur)
+        logger.warning(
+            "Login failed for account '%s' from IP '%s' (consecutive failures: %d)",
+            norm_account, client_ip, fail_count
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect username/email or password"
         )
+
+    # Reset failure tracking on successful login
+    with _reset_rate_limit_lock:
+        _login_failures.pop((norm_account, client_ip), None)
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return {
@@ -201,52 +292,90 @@ def login(login_data: LoginRequest, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/google", response_model=Token)
-async def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)):
+async def verify_google_token(token: str) -> dict:
     """
-    Authenticates a user via Google OAuth2 access token (popup flow) and returns a JWT access token.
-    Verifies the token by calling Google's userinfo endpoint.
+    Verifies a Google OAuth access token or ID token via Google's tokeninfo endpoint.
+    Strictly enforces:
+      - aud or azp == settings.GOOGLE_CLIENT_ID
+      - email_verified is true
+      - token is not expired (exp > now or expires_in > 0)
+      - valid email is present
+    Raises a generic 401 on any failure to prevent token probing.
     """
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://www.googleapis.com/oauth2/v3/userinfo",
-                headers={"Authorization": f"Bearer {body.access_token}"},
+            resp = await client.get(
+                "https://oauth2.googleapis.com/tokeninfo",
+                params={"access_token": token},
                 timeout=10.0,
             )
-        if response.status_code != 200:
-            raise ValueError(f"Google userinfo returned {response.status_code}: {response.text}")
-        id_info = response.json()
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid or expired Google access token: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+            if resp.status_code != 200:
+                resp = await client.get(
+                    "https://oauth2.googleapis.com/tokeninfo",
+                    params={"id_token": token},
+                    timeout=10.0,
+                )
+        if resp.status_code != 200:
+            raise ValueError(f"tokeninfo returned HTTP {resp.status_code}")
+
+        data = resp.json()
+        email = data.get("email")
+        if not email or not isinstance(email, str) or "@" not in email:
+            raise ValueError("missing or invalid email")
+
+        aud = data.get("aud")
+        azp = data.get("azp")
+        expected_client_id = settings.GOOGLE_CLIENT_ID
+        if not (aud == expected_client_id or azp == expected_client_id):
+            raise ValueError("audience mismatch")
+
+        email_verified = data.get("email_verified")
+        if email_verified not in (True, "true", "True"):
+            raise ValueError("unverified email")
+
+        now = time.time()
+        if "exp" in data:
+            if float(data["exp"]) <= now:
+                raise ValueError("token expired")
+        elif "expires_in" in data:
+            if float(data["expires_in"]) <= 0:
+                raise ValueError("token expired")
+
+        return data
     except Exception as e:
+        logger.warning("Google token verification failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Could not verify Google token: {str(e)}",
+            detail="Invalid or expired Google access token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    email = id_info.get("email")
-    if not email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Google userinfo does not contain an email address."
-        )
 
+@router.post("/google", response_model=Token)
+async def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """
+    Authenticates a user via Google OAuth2 token and returns a JWT access token.
+    Strictly verifies audience (aud/azp == GOOGLE_CLIENT_ID), verified email, and expiration.
+    """
+    id_info = await verify_google_token(body.access_token)
+
+    email = id_info["email"]
     name = id_info.get("name") or id_info.get("given_name") or email.split("@")[0]
 
     user = db.query(User).filter(User.email == email).first()
 
     if not user:
         if not settings.ALLOW_SIGNUP:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Public registration is currently disabled."
+            allowlist = [e.strip().lower() for e in settings.GOOGLE_AUTH_ALLOWLIST.split(",") if e.strip()]
+            user_email_lower = email.strip().lower()
+            is_allowed = (user_email_lower in allowlist) or any(
+                user_email_lower.endswith(f"@{domain.lstrip('@')}") for domain in allowlist if domain.startswith("@")
             )
+            if not is_allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Public registration is disabled and this Google account is not on the authorized allowlist."
+                )
 
         # Derive a unique username from the Google display name or email local-part
         base_username = re.sub(r"[^\w]", "", name.lower().replace(" ", "_"))
@@ -282,6 +411,63 @@ def read_users_me(current_user: User = Depends(get_current_user)):
     Returns profile information for the currently logged-in user.
     """
     return current_user
+
+
+@router.delete("/me", status_code=status.HTTP_200_OK)
+async def delete_account(
+    request: Request,
+    password: Optional[str] = None,
+    google_token: Optional[str] = None,
+    confirmation: Optional[DeletionConfirmationRequest] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permanently deletes the current user's account, all associated projects,
+    scans, findings, and disk upload directories.
+    Requires password confirmation for password accounts, or a fresh Google token for OAuth accounts.
+    Builds disk paths only from validated UUIDs inside the upload root without following symlinks.
+    """
+    import shutil
+    import os
+    import uuid
+
+    # Read confirmation from JSON body, query params, or custom confirmation header
+    confirm_pw = (confirmation.password if confirmation else None) or password or request.headers.get("x-confirm-password")
+    confirm_google = (confirmation.google_token if confirmation else None) or google_token or request.headers.get("x-confirm-google-token")
+
+    if current_user.hashed_password:
+        if not confirm_pw or not verify_password(confirm_pw, current_user.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password confirmation."
+            )
+    else:
+        if not confirm_google:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Fresh Google token required for account deletion."
+            )
+        token_data = await verify_google_token(confirm_google)
+        if token_data.get("email", "").lower() != current_user.email.lower():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Google token does not match the account email."
+            )
+
+    upload_root = os.path.realpath(os.path.abspath(settings.UPLOAD_DIR))
+    for project in current_user.projects:
+        proj_uuid = uuid.UUID(str(project.id))
+        project_dir = os.path.realpath(os.path.join(upload_root, str(proj_uuid)))
+        if os.path.dirname(project_dir) == upload_root and os.path.exists(project_dir):
+            if os.path.islink(project_dir):
+                os.unlink(project_dir)
+            elif os.path.isdir(project_dir):
+                shutil.rmtree(project_dir, ignore_errors=True)
+
+    db.delete(current_user)
+    db.commit()
+    return {"detail": "Account and all associated projects and files permanently deleted."}
 
 
 @router.post("/forgot-password")
