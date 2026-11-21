@@ -6,8 +6,12 @@
 docker.env*
 .env*
 *.env
+**/.env*
+**/docker.env*
 backend/.env*
 frontend/.env*
+**/*.pem
+**/*.key
 
 # Backups and storage
 backups

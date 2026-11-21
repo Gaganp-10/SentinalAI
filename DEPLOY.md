@@ -41,78 +41,155 @@
 
 ---
 
-## 1. First-Time Server Deployment
+## 1. First-Deploy Checklist for AWS EC2 (t3.medium)
 
-### Step 1.1: Launch AWS EC2 Instance (NOT RUN - AWS Console / CLI)
-1. Launch an EC2 instance:
-   - **AMI:** Ubuntu Server 24.04 LTS (HVM), SSD Volume Type (64-bit x86).
-   - **Instance Type:** `t3.medium` (2 vCPU, 4 GiB Memory).
-   - **Storage:** 30 GiB gp3 SSD (encrypted with AWS KMS default key).
-2. **Security Group Inbound Rules:**
-   - `TCP 22` — SSH (restrict to your office/admin IP).
-   - `TCP 80` — HTTP (0.0.0.0/0).
-   - `TCP 443` — HTTPS (0.0.0.0/0).
-   - *All other inbound ports blocked (PostgreSQL 5432 and Backend 8000 are never exposed).*
-3. **Elastic IP:** Allocate an Elastic IP and associate it with the instance to prevent IP changes on reboot.
+Follow this step-by-step checklist to provision and launch SentinelAI on AWS from scratch:
 
-### Step 1.2: Configure DNS
-Create a DNS **A record** pointing your domain (e.g., `sentinel.yourdomain.com`) to the Elastic IP.
+### Checklist Overview
 
-### Step 1.3: Run the Server Bootstrap Script
-SSH into the server as `ubuntu`:
+- [ ] **1. Provision EC2 Instance** (`t3.medium`, Ubuntu 24.04 LTS, gp3 30 GiB, IMDSv2 Required, Hop Limit 1)
+- [ ] **2. Security Group Hardening** (Port 80 & 443 open to `0.0.0.0/0`, Port 22 open **only** to `<ADMIN_IP>/32`)
+- [ ] **3. Elastic IP Allocation & Association**
+- [ ] **4. DNS A Record** (`sentinel.yourdomain.com` pointing to Elastic IP)
+- [ ] **5. Bootstrap Server Execution** (`bootstrap-server.sh` as root)
+- [ ] **6. TLS Staging Validation** (ACME Staging endpoint first to avoid Let's Encrypt rate limits)
+- [ ] **7. Switch to Production TLS & Docker Compose Up**
+- [ ] **8. Initial Administrative User Creation** (`create-user.sh`)
+- [ ] **9. Install & Enable Automated Backup Timer** (`sentinel-backup.timer` + failure handler)
+- [ ] **10. Trigger Backup & Check Journal** (`systemctl start sentinel-backup.service`)
+- [ ] **11. Test Scratch Restore Drill** (`restore.sh --scratch-test`)
+- [ ] **12. Rollback Verification** (Pre-restore dump & disaster recovery procedure)
+
+---
+
+### Step 1.1: Provision AWS EC2 Instance (`t3.medium`)
+
+Launch using AWS CLI (or AWS Console):
 ```bash
-ssh -i /path/to/your-key.pem ubuntu@<SERVER_ELASTIC_IP>
+aws ec2 run-instances \
+    --image-id resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
+    --instance-type t3.medium \
+    --key-name your-ssh-key \
+    --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":30,"VolumeType":"gp3","Encrypted":true}}]' \
+    --metadata-options "HttpTokens=required,HttpPutResponseHopLimit=1" \
+    --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=sentinel-ai-prod}]'
 ```
 
-Run the automated bootstrap script as `root`:
+> [!IMPORTANT]
+> **IMDSv2 Enforced (`HttpTokens=required,HttpPutResponseHopLimit=1`):** Restricting the IMDS response hop limit to `1` ensures that even if an attacker executes an SSRF exploit within a container on the host, the metadata service packet cannot traverse the Docker bridge network, preventing IAM credential exfiltration.
+
+### Step 1.2: Configure Security Group (Strict Inbound Filtering)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Gaganp-10/security-vulnerability-decoder-and-fixer/main/deploy/bootstrap-server.sh -o bootstrap-server.sh
+# Allow SSH strictly from your office/admin IP (replace with your IP)
+aws ec2 authorize-security-group-ingress --group-id <SG_ID> --protocol tcp --port 22 --cidr <ADMIN_IP>/32
+
+# Allow public inbound HTTP and HTTPS for Caddy TLS termination
+aws ec2 authorize-security-group-ingress --group-id <SG_ID> --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-id <SG_ID> --protocol tcp --port 443 --cidr 0.0.0.0/0
+```
+*(All other inbound ports blocked; database 5432 and backend 8000 are purely internal).*
+
+### Step 1.3: Elastic IP Allocation & DNS A Record
+1. Allocate and associate an Elastic IP:
+   ```bash
+   ALLOC_ID=$(aws ec2 allocate-address --domain vpc --query 'AllocationId' --output text)
+   aws ec2 associate-address --instance-id <INSTANCE_ID> --allocation-id "${ALLOC_ID}"
+   ```
+2. In Route53 or your DNS registrar, create an **A record**:
+   - **Host:** `sentinel.yourdomain.com`
+   - **Target / Value:** `<ELASTIC_IP>`
+   - **TTL:** 300 seconds
+
+### Step 1.4: Run Server Bootstrap Script
+SSH into the server as `ubuntu`:
+```bash
+ssh -i /path/to/your-key.pem ubuntu@<ELASTIC_IP>
+```
+Run `bootstrap-server.sh` as root:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Gaganp-10/SentinalAI/main/deploy/bootstrap-server.sh -o bootstrap-server.sh
 sudo bash bootstrap-server.sh
 ```
 
-**What the bootstrap script automates:**
-- Creates a dedicated `deploy` system user with passwordless `sudo` and copies SSH keys.
-- Disables SSH password authentication (`PasswordAuthentication no`).
-- Configures automated daily security updates via `unattended-upgrades`.
-- Allocates and activates a `2 GB swap file` (`/swapfile`, `vm.swappiness=10`).
-- Installs Docker Engine and Docker Compose from the official Docker repository.
-- Clones the repository to `/home/deploy/sentinel-ai`.
-- Generates cryptographically secure, non-default `POSTGRES_PASSWORD` and `SECRET_KEY` into `docker.env` with `chmod 600` permissions.
-
-### Step 1.4: Configure Environment Variables
-Log in as the `deploy` user:
+### Step 1.5: Configure TLS ACME Staging First
+Log in as `deploy`:
 ```bash
-ssh deploy@<SERVER_ELASTIC_IP>
+ssh deploy@<ELASTIC_IP>
 cd /home/deploy/sentinel-ai
 nano docker.env
 ```
-Ensure the following variables are configured:
+Set your domain, email, and activate ACME staging first to prevent Let's Encrypt rate limits:
 ```ini
 DOMAIN=sentinel.yourdomain.com
 ACME_EMAIL=admin@yourdomain.com
-TLS_INTERNAL=
-
-ENV=production
-FRONTEND_URL=https://sentinel.yourdomain.com
-ALLOWED_ORIGINS=https://sentinel.yourdomain.com
-
-EMAIL_BACKEND=smtp
-SMTP_HOST=smtp.mailgun.org
-SMTP_PORT=587
-SMTP_USER=postmaster@sentinel.yourdomain.com
-SMTP_PASSWORD=your-smtp-password
-SMTP_FROM=noreply@sentinel.yourdomain.com
-SMTP_USE_TLS=true
-ACCESS_TOKEN_EXPIRE_MINUTES=120
-
-# Production Access & Abuse Controls
-ALLOW_SIGNUP=false
-GOOGLE_AUTH_ALLOWLIST=
-MAX_PROJECTS_PER_USER=50
-MAX_DAILY_UPLOADS_PER_USER=100
-MAX_DAILY_UPLOAD_MB_PER_USER=500
-MAX_USER_STORAGE_MB=500
+# Test against Let's Encrypt staging first:
+ACME_CA=acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 ```
+
+Start the stack:
+```bash
+docker compose --env-file docker.env -f docker-compose.prod.yml up -d --build
+```
+
+Check Caddy logs to confirm successful staging certificate validation:
+```bash
+docker compose --env-file docker.env -f docker-compose.prod.yml logs -f caddy
+```
+
+### Step 1.6: Switch to Production TLS & Docker Compose Up
+Once staging certificate negotiation succeeds, remove the staging CA:
+```bash
+# In docker.env, comment out or blank ACME_CA:
+ACME_CA=
+```
+Restart Caddy to obtain production Let's Encrypt certificates:
+```bash
+docker compose --env-file docker.env -f docker-compose.prod.yml restart caddy
+docker compose --env-file docker.env -f docker-compose.prod.yml logs -f caddy
+```
+
+### Step 1.7: Create Initial Admin User
+Because `ALLOW_SIGNUP=false` is enforced in production, create the initial administrative account:
+```bash
+./deploy/create-user.sh --username admin --email admin@yourdomain.com
+```
+
+### Step 1.8: Install Systemd Backup Units & Verify
+```bash
+# 1. Copy units to systemd
+sudo cp deploy/sentinel-backup.service deploy/sentinel-backup.timer deploy/sentinel-backup-failure@.service /etc/systemd/system/
+
+# 2. Configure backup environment (S3 bucket and optional healthcheck ping)
+install -m 600 /dev/null /home/deploy/sentinel-ai/backup.env
+cat << 'EOF' > /home/deploy/sentinel-ai/backup.env
+S3_BUCKET=your-sentinel-backups-bucket
+HC_PING_URL=https://hc-ping.com/your-uuid
+EOF
+
+# 3. Reload systemd and enable timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now sentinel-backup.timer
+systemctl list-timers sentinel-backup.timer
+
+# 4. Trigger manual test run and inspect journal logs
+sudo systemctl start sentinel-backup.service
+journalctl -u sentinel-backup.service -n 50 --no-pager
+```
+
+### Step 1.9: Test Restore Procedure (Scratch Test)
+Verify backup integrity in an isolated temporary database without touching live data:
+```bash
+./deploy/restore.sh --scratch-test $(ls -t /home/deploy/sentinel-ai/backups/db_*.dump | head -n 1)
+```
+
+### Step 1.10: Rollback & Disaster Recovery
+If an update or schema migration introduces breaking errors:
+1. Stop backend: `docker compose -f docker-compose.prod.yml stop backend`
+2. Restore the pre-restore dump taken automatically before the operation:
+   ```bash
+   ./deploy/restore.sh /home/deploy/sentinel-ai/backups/pre_restore_<TIMESTAMP>.dump
+   ```
+3. Restart backend: `docker compose -f docker-compose.prod.yml start backend`
 
 ### Step 1.5: Start the Production Stack
 ```bash

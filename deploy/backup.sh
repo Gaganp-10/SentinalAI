@@ -6,6 +6,9 @@
 #   1. PostgreSQL custom-format compressed dump (-Fc), validated with pg_restore -l
 #   2. Gzip-compressed tarball of the uploads volume
 #   3. SHA-256 checksums file for atomic verification on restore
+#
+# Retention: keeps the newest KEEP_SETS complete backup sets (default 7).
+# Age-based deletion is intentionally NOT used; sets are pruned by count.
 # =============================================================================
 
 set -euo pipefail
@@ -13,13 +16,19 @@ umask 077
 export MSYS_NO_PATHCONV=1
 
 BACKUP_DIR="${BACKUP_DIR:-$(pwd)/backups}"
-RETENTION_DAYS="${RETENTION_DAYS:-7}"
+KEEP_SETS="${KEEP_SETS:-7}"
 S3_BUCKET="${S3_BUCKET:-}"
+HC_PING_URL="${HC_PING_URL:-}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ENV_FILE="${ENV_FILE:-./docker.env}"
 
 COMPOSE_ENV_ARG=()
-if [[ -f "${ENV_FILE}" ]]; then
+if [[ -f "./docker.env.prod.local" ]]; then
+    ENV_FILE="./docker.env.prod.local"
+    COMPOSE_ENV_ARG=(--env-file "${ENV_FILE}")
+    # shellcheck disable=SC2046
+    export $(grep -E '^(POSTGRES_USER|POSTGRES_DB)=' "${ENV_FILE}" | xargs)
+elif [[ -f "${ENV_FILE}" ]]; then
     COMPOSE_ENV_ARG=(--env-file "${ENV_FILE}")
     # shellcheck disable=SC2046
     export $(grep -E '^(POSTGRES_USER|POSTGRES_DB)=' "${ENV_FILE}" | xargs)
@@ -29,13 +38,13 @@ elif [[ -f "/home/deploy/sentinel-ai/docker.env" ]]; then
     export $(grep -E '^(POSTGRES_USER|POSTGRES_DB)=' /home/deploy/sentinel-ai/docker.env | xargs)
 fi
 
-# Load S3_BUCKET from backup.env if present
+# Load S3_BUCKET (and optionally HC_PING_URL) from backup.env if present
 if [[ -f "/home/deploy/sentinel-ai/backup.env" ]]; then
     # shellcheck disable=SC2046
-    export $(grep -E '^S3_BUCKET=' /home/deploy/sentinel-ai/backup.env | xargs)
+    export $(grep -E '^(S3_BUCKET|HC_PING_URL)=' /home/deploy/sentinel-ai/backup.env | xargs)
 elif [[ -f "./backup.env" ]]; then
     # shellcheck disable=SC2046
-    export $(grep -E '^S3_BUCKET=' ./backup.env | xargs)
+    export $(grep -E '^(S3_BUCKET|HC_PING_URL)=' ./backup.env | xargs)
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-sentinel}"
@@ -110,12 +119,33 @@ echo "=== [3/4] Generating cryptographic SHA-256 checksums ==="
 )
 echo "Checksums saved to ${CHECKSUM_FILE}"
 
-echo "=== [4/4] Enforcing retention policy (keep ${RETENTION_DAYS} days) ==="
-find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name "db_*.dump" -o -name "uploads_*.tar.gz" -o -name "checksums_*.sha256" \) -mtime "+${RETENTION_DAYS}" -exec rm -f {} +
-echo "Local backups older than ${RETENTION_DAYS} days purged."
+echo "=== [4/4] Pruning old backup sets (keep newest ${KEEP_SETS}) ==="
+# Collect all complete sets: a set is complete when all 3 files share a timestamp.
+# Sort timestamps descending; delete everything beyond KEEP_SETS complete sets.
+mapfile -t ALL_TIMESTAMPS < <(
+    find "${BACKUP_DIR}" -maxdepth 1 -name "db_*.dump" 2>/dev/null \
+        | sed -E 's|.*/db_(.+)\.dump$|\1|' \
+        | sort -r
+)
+KEPT=0
+for TS in "${ALL_TIMESTAMPS[@]}"; do
+    # Only count complete sets (all 3 files must exist)
+    if [[ -f "${BACKUP_DIR}/db_${TS}.dump" && \
+          -f "${BACKUP_DIR}/uploads_${TS}.tar.gz" && \
+          -f "${BACKUP_DIR}/checksums_${TS}.sha256" ]]; then
+        KEPT=$(( KEPT + 1 ))
+        if [[ "${KEPT}" -gt "${KEEP_SETS}" ]]; then
+            echo "Pruning old set: ${TS}"
+            rm -f "${BACKUP_DIR}/db_${TS}.dump" \
+                  "${BACKUP_DIR}/uploads_${TS}.tar.gz" \
+                  "${BACKUP_DIR}/checksums_${TS}.sha256"
+        fi
+    fi
+done
+echo "Retained ${KEEP_SETS} newest complete backup set(s)."
 
 if [[ -n "${S3_BUCKET}" ]]; then
-    if command -v aws >/dev/null 2>&1; then
+    if command -v aws > /dev/null 2>&1; then
         echo "Uploading backups to s3://${S3_BUCKET}/sentinel-backups/..."
         aws s3 cp "${DB_BACKUP_FILE}" "s3://${S3_BUCKET}/sentinel-backups/db_${TIMESTAMP}.dump" --sse AES256
         aws s3 cp "${UPLOADS_BACKUP_FILE}" "s3://${S3_BUCKET}/sentinel-backups/uploads_${TIMESTAMP}.tar.gz" --sse AES256
@@ -127,3 +157,10 @@ if [[ -n "${S3_BUCKET}" ]]; then
 fi
 
 echo "Backup successful: db_${TIMESTAMP}.dump and uploads_${TIMESTAMP}.tar.gz"
+
+# Healthcheck ping (optional — set HC_PING_URL in backup.env)
+if [[ -n "${HC_PING_URL}" ]]; then
+    curl -fsS --retry 3 --max-time 10 "${HC_PING_URL}" > /dev/null 2>&1 \
+        && echo "Healthcheck ping sent to ${HC_PING_URL}" \
+        || echo "WARNING: Healthcheck ping failed (non-fatal)." >&2
+fi

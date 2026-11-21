@@ -43,13 +43,13 @@
         -Server
     }
 
-    # Cache control: long immutable caching for static assets
+    # Cache control: long immutable caching for hashed static assets
     @assets path /assets/*
     header @assets Cache-Control "public, max-age=31536000, immutable"
 
-    # Cache control: no-cache for SPA entry points
-    @html path / /index.html
-    header @html Cache-Control "no-cache, no-store, must-revalidate"
+    # Cache control: no-cache for everything else (SPA deep links, API, index.html)
+    @noassets not path /assets/*
+    header @noassets Cache-Control "no-cache, no-store, must-revalidate"
 
     # Direct routing: /api/* requests proxy straight to backend
     handle /api/* {

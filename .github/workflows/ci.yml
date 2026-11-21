@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:15.20-alpine3.24
         env:
           POSTGRES_DB: security_scanner_test
           POSTGRES_USER: sentinel
@@ -46,10 +46,10 @@ jobs:
       - name: Install Semgrep CLI in dedicated venv
         run: |
           sudo python3 -m venv /opt/semgrep
-          sudo chown -R $USER:$USER /opt/semgrep
+          sudo chown -R "$USER:$USER" /opt/semgrep
           /opt/semgrep/bin/pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1"
           /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.183.0
-          echo "/opt/semgrep/bin" >> $GITHUB_PATH
+          echo "/opt/semgrep/bin" >> "$GITHUB_PATH"
 
       - name: Install Python Dependencies
         run: |
@@ -111,11 +111,8 @@ jobs:
           inputs: backend/requirements.txt
 
       - name: Run Gitleaks Secret Scanner
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --baseline-path .gitleaks-baseline.json
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" -w /repo zricethezav/gitleaks:latest git --baseline-path=/repo/.gitleaks-baseline.json --redact --verbose
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
@@ -137,6 +134,7 @@ jobs:
           ignore-unfixed: "true"
           trivyignores: ".trivyignore.yaml"
           severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
 
       - name: Trivy Scan Caddy Image
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
@@ -147,15 +145,18 @@ jobs:
           ignore-unfixed: "true"
           trivyignores: ".trivyignore.yaml"
           severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
 
       - name: Trivy Scan Postgres Image
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: "postgres:15.20-alpine3.24"
           format: "table"
-          exit-code: "0"
+          exit-code: "1"
           ignore-unfixed: "true"
+          trivyignores: ".trivyignore.yaml"
           severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
 
       - name: Trivy Scan Upstream Caddy Image
         uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
@@ -165,6 +166,7 @@ jobs:
           exit-code: "0"
           ignore-unfixed: "true"
           severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
 
   semgrep-dep-audit:
     name: Pip-Audit Inside Backend Image (/opt/semgrep)
@@ -181,7 +183,7 @@ jobs:
           docker build -t sentinel-backend:local ./backend
 
       - name: Run Pip-Audit Against /opt/semgrep Isolated Virtualenv
-        # Audit transitive dependencies of isolated Semgrep CLI in /opt/semgrep.
+        # Audit transitive dependencies of isolated Semgrep CLI in /opt/semgrep via pip freeze.
         # Accepted advisories (MCP offline dependency; semgrep/commands/mcp.py):
         # CVE-2026-59951:  https://osv.dev/vulnerability/CVE-2026-59951  (expires 2026-12-31)
         # CVE-2026-116685: https://osv.dev/vulnerability/CVE-2026-116685 (expires 2026-12-31)
@@ -192,7 +194,8 @@ jobs:
         run: |
           docker run --rm -u root sentinel-backend:local sh -c "
             pip install --no-cache-dir pip-audit && \
-            pip-audit --path /opt/semgrep \
+            /opt/semgrep/bin/pip freeze > /tmp/semgrep-reqs.txt && \
+            pip-audit -r /tmp/semgrep-reqs.txt --no-deps \
               --ignore-vuln CVE-2026-59951 \
               --ignore-vuln CVE-2026-116685 \
               --ignore-vuln CVE-2026-116684 \

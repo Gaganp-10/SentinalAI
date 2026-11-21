@@ -40,3 +40,5 @@ __pycache__/
 scripts/evidence/
 docs/evidence/
 backups/
+
+deploy/scratch/
