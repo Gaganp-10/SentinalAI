@@ -81,7 +81,7 @@
     "@types/node": "^22.16.5",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^5.2.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^6.15.0",
     "eslint-plugin-prettier": "^2.7.0",
