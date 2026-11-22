@@ -21,10 +21,12 @@ WORKDIR /app
 # Create isolated virtualenv for Semgrep to decouple its transitive dependencies (mcp, opentelemetry-api) from the application environment
 # Pinned semgrep==1.183.0 (engine performance, 14/14 rule fixture precision; avoids 1.185.0+ breaking changes)
 # Left root-owned (no chown to appuser) so non-root appuser cannot tamper with or mutate site-packages
-# Note: mcp cannot be uninstalled as semgrep/commands/mcp.py imports it at startup. Accepted risks documented in docs/SECURITY-ACCEPTED-RISKS.md.
+# mcp upgraded to 1.30.0 (fix for CVE-2026-115563; 1.x API compatible with semgrep 1.183.0 FastMCP)
+# wcmatch upgraded to >=11.2 (fix for CVE-2026-132276; ReDoS polynomial backtracking in glob)
 RUN python3 -m venv /opt/semgrep && \
     /opt/semgrep/bin/pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1" && \
-    /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.183.0
+    /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.183.0 && \
+    /opt/semgrep/bin/pip install --no-cache-dir "mcp==1.30.0" "wcmatch>=11.2"
 
 # Copy requirements file first to leverage Docker layer caching —
 # this layer is only rebuilt when requirements.txt changes.

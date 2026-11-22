@@ -4,22 +4,22 @@ vulnerabilities:
     expired_at: 2026-12-31T23:59:59Z
   - id: CVE-2026-59951
     paths:
-      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
     statement: Unreachable; Semgrep CLI runs offline without MCP network listener. https://osv.dev/vulnerability/CVE-2026-59951
     expired_at: 2026-12-31T23:59:59Z
   - id: CVE-2026-116685
     paths:
-      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
     statement: Unreachable; MCP transport layer inactive during static analysis. https://osv.dev/vulnerability/CVE-2026-116685
     expired_at: 2026-12-31T23:59:59Z
   - id: CVE-2026-116684
     paths:
-      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
     statement: Unreachable; no external MCP clients or untrusted JSON-RPC streams. https://osv.dev/vulnerability/CVE-2026-116684
     expired_at: 2026-12-31T23:59:59Z
   - id: CVE-2026-116686
     paths:
-      - opt/semgrep/lib/python3.13/site-packages/mcp-1.29.0.dist-info/METADATA
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
     statement: Unreachable; remote MCP server negotiation is never invoked. https://osv.dev/vulnerability/CVE-2026-116686
     expired_at: 2026-12-31T23:59:59Z
   - id: CVE-2026-114603

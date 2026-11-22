@@ -49,6 +49,7 @@ jobs:
           sudo chown -R "$USER:$USER" /opt/semgrep
           /opt/semgrep/bin/pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1"
           /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.183.0
+          /opt/semgrep/bin/pip install --no-cache-dir "mcp==1.30.0" "wcmatch>=11.2"
           echo "/opt/semgrep/bin" >> "$GITHUB_PATH"
 
       - name: Install Python Dependencies
@@ -195,7 +196,7 @@ jobs:
           docker run --rm -u root sentinel-backend:local sh -c "
             pip install --no-cache-dir pip-audit && \
             /opt/semgrep/bin/pip freeze > /tmp/semgrep-reqs.txt && \
-            pip-audit -r /tmp/semgrep-reqs.txt --no-deps \
+            pip-audit -r /tmp/semgrep-reqs.txt --no-deps --disable-pip \
               --ignore-vuln CVE-2026-59951 \
               --ignore-vuln CVE-2026-116685 \
               --ignore-vuln CVE-2026-116684 \
