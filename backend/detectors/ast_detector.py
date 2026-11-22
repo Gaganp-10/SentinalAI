@@ -2,10 +2,19 @@ import ast
 import os
 import re
 import logging
-from typing import List
+from typing import List, Optional
 from backend.detectors.schema import Finding
 
 logger = logging.getLogger(__name__)
+
+def _get_str_constant(node: ast.AST) -> Optional[str]:
+    """
+    Extract string value from an AST node in a Python-version-compatible way.
+    In Python 3.8+ (including Python 3.13 and 3.14+), string literals are represented as ast.Constant.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
 
 class ASTVisitor(ast.NodeVisitor):
     def __init__(self, file_path: str, file_content: str):
@@ -50,12 +59,8 @@ class ASTVisitor(ast.NodeVisitor):
                     is_secret = False
                     val_str = ""
                     # Check if standard string constant
-                    if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-                        val_str = node.value.value
-                        if len(val_str) > 4 and not val_str.startswith("<") and not val_str.startswith("YOUR_"):
-                            is_secret = True
-                    elif isinstance(node.value, ast.Str):  # Python < 3.8 fallback
-                        val_str = node.value.s
+                    val_str = _get_str_constant(node.value)
+                    if val_str is not None:
                         if len(val_str) > 4 and not val_str.startswith("<") and not val_str.startswith("YOUR_"):
                             is_secret = True
                             
@@ -141,9 +146,8 @@ class ASTVisitor(ast.NodeVisitor):
                 if isinstance(arg, ast.JoinedStr):
                     is_concat_or_formatted = True
                     for val in arg.values:
-                        if isinstance(val, ast.Constant) and isinstance(val.value, str) and self.sql_keywords.search(val.value):
-                            sql_found = True
-                        elif isinstance(val, ast.Str) and self.sql_keywords.search(val.s):
+                        val_str = _get_str_constant(val)
+                        if val_str and self.sql_keywords.search(val_str):
                             sql_found = True
                             
                 # Case 2: string addition (+) or modulo (%) string formatting
@@ -154,19 +158,15 @@ class ASTVisitor(ast.NodeVisitor):
                             is_concat_or_formatted = True
                         
                         # Check left operand
-                        if isinstance(bin_node.left, ast.Constant) and isinstance(bin_node.left.value, str):
-                            if self.sql_keywords.search(bin_node.left.value):
-                                sql_found = True
-                        elif isinstance(bin_node.left, ast.Str) and self.sql_keywords.search(bin_node.left.s):
+                        left_str = _get_str_constant(bin_node.left)
+                        if left_str and self.sql_keywords.search(left_str):
                             sql_found = True
                         elif isinstance(bin_node.left, ast.BinOp):
                             check_binop(bin_node.left)
                             
                         # Check right operand
-                        if isinstance(bin_node.right, ast.Constant) and isinstance(bin_node.right.value, str):
-                            if self.sql_keywords.search(bin_node.right.value):
-                                sql_found = True
-                        elif isinstance(bin_node.right, ast.Str) and self.sql_keywords.search(bin_node.right.s):
+                        right_str = _get_str_constant(bin_node.right)
+                        if right_str and self.sql_keywords.search(right_str):
                             sql_found = True
                         elif isinstance(bin_node.right, ast.BinOp):
                             check_binop(bin_node.right)
@@ -176,11 +176,8 @@ class ASTVisitor(ast.NodeVisitor):
                 # Case 3: ".format()" method calls
                 elif isinstance(arg, ast.Call) and isinstance(arg.func, ast.Attribute) and arg.func.attr == "format":
                     is_concat_or_formatted = True
-                    format_str_node = arg.func.value
-                    if isinstance(format_str_node, ast.Constant) and isinstance(format_str_node.value, str):
-                        if self.sql_keywords.search(format_str_node.value):
-                            sql_found = True
-                    elif isinstance(format_str_node, ast.Str) and self.sql_keywords.search(format_str_node.s):
+                    format_str = _get_str_constant(arg.func.value)
+                    if format_str and self.sql_keywords.search(format_str):
                         sql_found = True
                         
                 if is_concat_or_formatted and sql_found:

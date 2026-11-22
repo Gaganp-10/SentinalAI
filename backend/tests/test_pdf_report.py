@@ -31,7 +31,7 @@ class MockProject:
 
 
 class MockScan:
-    def __init__(self):
+    def __init__(self, engines_run=None):
         import uuid
         self.id = uuid.uuid4()
         self.scan_time = datetime(2026, 9, 28, 14, 30, tzinfo=timezone.utc)
@@ -41,6 +41,7 @@ class MockScan:
         self.low_count = 1
         self.total_issues = 7
         self.status = "completed"
+        self.engines_run = engines_run if engines_run is not None else ["bandit", "ast", "semgrep"]
 
 
 class MockVuln:
@@ -116,12 +117,24 @@ def test_pdf_report_empty_state():
 
     assert _calc_score([]) == 100
 
+    # 1. Complete scan with zero findings: clean scan with 100 security score
     pdf_bytes = generate_pdf_report_for_project(proj, scan, [])
     assert pdf_bytes is not None
     reader = pypdf.PdfReader(__import__("io").BytesIO(pdf_bytes))
     text = "\n".join([p.extract_text() for p in reader.pages])
     assert "No vulnerabilities found" in text
+    assert "All security checks passed" in text
     assert "100" in text
+
+    # 2. Incomplete scan with zero findings: must NOT falsely imply a clean scan or 100 score
+    incomplete_scan = MockScan(engines_run=["osv"])
+    incomplete_pdf = generate_pdf_report_for_project(proj, incomplete_scan, [])
+    assert incomplete_pdf is not None
+    incomplete_reader = pypdf.PdfReader(__import__("io").BytesIO(incomplete_pdf))
+    incomplete_text = "\n".join([p.extract_text() for p in incomplete_reader.pages])
+    assert "Incomplete scan" in incomplete_text
+    assert "All security checks passed" not in incomplete_text
+    assert "100" not in incomplete_text
 
 
 def test_pdf_report_xss_and_long_lines():

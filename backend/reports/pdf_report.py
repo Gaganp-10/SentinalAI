@@ -574,7 +574,16 @@ pre.fix-box {
 
     # ── Findings Section ──────────────────────────────────────────────────────
     if not sorted_vulns:
-        findings_html = """
+        if is_incomplete:
+            findings_html = """
+<h2>Findings</h2>
+<div class="empty-state">
+  <div style="font-size:13pt; font-weight:bold; margin-bottom:4px; color:#b45309;">Incomplete scan</div>
+  <div style="font-size:9pt; color:#92400e;">One or more security analyzers timed out or did not run. This report does not represent a clean scan or complete security assessment.</div>
+</div>
+"""
+        else:
+            findings_html = """
 <h2>Findings</h2>
 <div class="empty-state">
   <div style="font-size:13pt; font-weight:bold; margin-bottom:4px;">No vulnerabilities found</div>
