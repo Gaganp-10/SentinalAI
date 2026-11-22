@@ -20,5 +20,5 @@ xhtml2pdf==0.2.21
 pyflakes>=3.2.0
 defusedxml>=0.7.1
 packaging>=23.0
-setuptools>=78.1.1
+setuptools>=84.2.1
 
