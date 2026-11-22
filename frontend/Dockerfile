@@ -15,10 +15,10 @@ ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 RUN npm run build
 
 # ─── Stage 2: Serve ──────────────────────────────────────────────────────────
-FROM nginx:1.27-alpine AS runner
+FROM nginx:1.28-alpine AS runner
 
-# Remove default nginx static content
-RUN rm -rf /usr/share/nginx/html/*
+# Upgrade OS packages to clear security vulnerabilities and remove default content
+RUN apk upgrade --no-cache && rm -rf /usr/share/nginx/html/*
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html

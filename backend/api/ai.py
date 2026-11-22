@@ -17,6 +17,31 @@ router = APIRouter(prefix="/ai", tags=["AI Mentor"])
 
 logger = logging.getLogger(__name__)
 
+import time
+import threading
+
+_copilot_usage_lock = threading.Lock()
+_copilot_usage_records: dict[UUID, list[float]] = {}
+
+def check_copilot_rate_limit(user_id: UUID):
+    if settings.MAX_DAILY_COPILOT_CHATS_PER_USER is not None and settings.MAX_DAILY_COPILOT_CHATS_PER_USER >= 0:
+        now = time.time()
+        cutoff = now - 86400.0
+        with _copilot_usage_lock:
+            existing = [ts for ts in _copilot_usage_records.get(user_id, []) if ts > cutoff]
+            if len(existing) >= settings.MAX_DAILY_COPILOT_CHATS_PER_USER:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"Daily AI Copilot query limit exceeded ({settings.MAX_DAILY_COPILOT_CHATS_PER_USER} queries per 24 hours)."
+                )
+            existing.append(now)
+            _copilot_usage_records[user_id] = existing
+
+def reset_copilot_rate_limits():
+    """Helper for unit tests to reset in-memory history."""
+    with _copilot_usage_lock:
+        _copilot_usage_records.clear()
+
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
@@ -41,6 +66,8 @@ def ask_security_mentor(
     If vuln_id is omitted but project_id is provided, automatically binds the matching
     vulnerability in that project (by package name or single-finding default).
     """
+    check_copilot_rate_limit(current_user.id)
+
     # Fold recent conversation history (last 6 messages max) into question prompt
     folded_question = request.question
     if request.history:

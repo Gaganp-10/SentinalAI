@@ -251,6 +251,14 @@ function ProjectDetailPage() {
             loading={files.isLoading || vulns.isLoading}
           />
 
+          {latestScan(scans.data)?.incomplete && (
+            <div className="mt-6 flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-amber-500">
+              <span className="font-semibold text-[14px]">
+                Incomplete scan: not a security assessment
+              </span>
+            </div>
+          )}
+
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <SecurityScoreGauge
               scan={latestScan(scans.data)}

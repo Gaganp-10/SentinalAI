@@ -1,6 +1,7 @@
 const { chromium } = require('playwright');
 
-const JWT_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3ODUxNzM5NDgsInN1YiI6ImVmNDQzMDI5LWRjMjctNDZiMC1iMzZjLWUwZGUzNGFmNmM4MCJ9._RXESZMVFnzGAv3QUhgcxyOsTH-1Rmk3T4MENnRzKDo';
+// Obtain token dynamically at runtime from environment variable or API authentication
+const JWT_TOKEN = process.env.AUTH_TOKEN || process.env.JWT_TOKEN || '';
 
 (async () => {
   const browser = await chromium.launch({ headless: true });

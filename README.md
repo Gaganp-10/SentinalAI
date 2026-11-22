@@ -326,6 +326,20 @@ integration tests (`backend/tests/test_runtime_fix_correctness.py`,
 `backend/tests/test_step6.py`, `backend/tests/test_issue_classes_dedup.py`,
 and `backend/tests/test_step7.py` for SCA/dependency scanning).
 
+## AI Providers & Privacy Notice
+
+SentinelAI supports multiple AI operational modes via the `AI_PROVIDER` environment variable:
+- `template` (Default) — 100% local, offline, deterministic explanation and fix generation. Zero code or findings ever leave your server.
+- `groq` — Cloud inference via Groq API (`llama-3.3-70b-versatile`).
+- `openai` — Cloud inference via OpenAI API (`gpt-4o-mini`).
+- `ollama` — Self-hosted local inference server.
+
+> **Privacy Notice**: When an external AI provider (`groq` or `openai`) is enabled, vulnerability code snippets, descriptions, and user mentor chat queries are transmitted to the external provider's API. To guarantee zero data egress, deploy SentinelAI with `AI_PROVIDER=template` or self-host with `ollama`.
+
+## Database Architecture & Migrations
+
+SentinelAI uses PostgreSQL 15 in production. Database migrations are executed automatically and idempotently on application startup via `backend/database/migration.py` using SQLAlchemy schema reflection and direct SQL execution. No external migration framework (such as Alembic) is required.
+
 ## Test Database Isolation
 
 All automated tests run against a **separate** PostgreSQL database
@@ -355,3 +369,11 @@ python backend/scripts/benchmarks/benchmark_real_3000.py
 ```
 
 *Note: The benchmark uses an isolated, ephemeral in-memory SQLite database (`sqlite:///:memory:`). It does not create or persist any users, database credentials, or disk artifacts in your application database.*
+
+## Local Testing Mailpit Overlay
+
+For offline local rehearsal and test verification of password-reset emails, `docker-compose.mailpit.yml` provides a local mock SMTP receiver and inbox interface bound strictly to `127.0.0.1`:
+- SMTP port: `127.0.0.1:1025`
+- Web UI: `http://127.0.0.1:8025`
+
+> **IMPORTANT**: `docker-compose.mailpit.yml` is strictly an offline local rehearsal overlay. It is **NEVER** deployed or used on AWS or in production. Production environments use verified cloud SMTP relay providers with TLS on port 465 or 587.

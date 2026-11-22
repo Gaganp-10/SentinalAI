@@ -1,0 +1,20 @@
+# TEST-ONLY: This overlay configures an internal (offline) network without outbound internet access.
+# Do NOT use in production. Apply only for offline scan testing.
+# Usage: docker compose -f docker-compose.prod.yml -f docker-compose.offline.yml up -d
+services:
+  caddy:
+    networks:
+      - default
+      - internal_net
+  backend:
+    networks:
+      - internal_net
+  db:
+    networks:
+      - internal_net
+
+networks:
+  internal_net:
+    internal: true
+
+

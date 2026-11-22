@@ -407,6 +407,9 @@ export function SecurityCopilot({
                     </button>
                   </div>
                 </div>
+                <p className="mt-2 text-center text-[10.5px] text-muted-foreground/70">
+                  Notice: Code snippets and finding context are transmitted to the configured AI provider for analysis.
+                </p>
               </div>
             </motion.aside>
           </>

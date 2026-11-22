@@ -1,0 +1,7 @@
+[Unit]
+Description=SentinelAI Backup Failure Notification and Alert for %i
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/bin/sh -c 'logger -p crit "CRITICAL: Backup service %i has failed! Inspect journalctl -u %i for details."; mkdir -p /var/run/sentinel; date -u +"%%Y-%%m-%%dT%%H:%%M:%%SZ: Backup service %i failed" > /var/run/sentinel/backup_failed.flag'

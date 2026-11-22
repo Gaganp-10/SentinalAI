@@ -6,6 +6,7 @@ import logging
 import re
 from typing import List
 from backend.detectors.schema import Finding, DetectorError
+from backend.detectors.process_runner import run_scanner_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,11 @@ def _extract_semgrep_cwe(metadata: dict) -> str | None:
 
 class SemgrepDetector:
     def __init__(self, rules_path: str = None):
-        self.semgrep_bin = shutil.which("semgrep")
+        isolated_bin = "/opt/semgrep/bin/semgrep"
+        if os.path.exists(isolated_bin) and os.access(isolated_bin, os.X_OK):
+            self.semgrep_bin = isolated_bin
+        else:
+            self.semgrep_bin = shutil.which("semgrep")
         self.is_available = self.semgrep_bin is not None
         if rules_path:
             self.rules_path = rules_path
@@ -68,14 +73,7 @@ class SemgrepDetector:
         ]
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False
-            )
+            result = run_scanner_subprocess(cmd)
 
             # Return codes: 0 = no findings, 1 = findings found. Return codes >= 2 are errors.
             if result.returncode not in (0, 1):

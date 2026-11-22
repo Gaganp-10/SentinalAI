@@ -4,7 +4,7 @@ import type { ScanHistory } from "../../api/projects";
 // NOTE: Security score calculation is currently performed client-side.
 // Ideally, this calculation should move to the backend API in the future.
 export function computeSecurityScore(scan?: ScanHistory | null): number | null {
-  if (!scan || scan.status?.toLowerCase() !== "completed") {
+  if (!scan || scan.status?.toLowerCase() !== "completed" || scan.incomplete) {
     return null;
   }
   const critical = scan.critical_count ?? 0;
@@ -71,6 +71,15 @@ export function SecurityScoreGauge({
       {loading ? (
         <div className="my-6 flex flex-col items-center justify-center">
           <div className="size-[140px] animate-pulse rounded-full border-8 border-foreground/10" />
+        </div>
+      ) : scan?.incomplete ? (
+        <div className="my-8 flex flex-col items-center justify-center">
+          <div className="icon-chip flex size-[64px] items-center justify-center rounded-full text-amber-500 bg-amber-500/10 border border-amber-500/20 mb-3">
+            <span className="text-[28px] font-bold">—</span>
+          </div>
+          <p className="text-[13.5px] font-medium text-amber-500 max-w-[220px]">
+            Incomplete scan: not a security assessment
+          </p>
         </div>
       ) : score === null ? (
         <div className="my-8 flex flex-col items-center justify-center">

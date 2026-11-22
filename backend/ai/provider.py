@@ -7,6 +7,14 @@ from backend.utils.config import settings
 
 logger = logging.getLogger(__name__)
 
+def _cap_prompt_text(text: Optional[str], max_len: int = 4000) -> str:
+    """Caps prompt input text to avoid token exhaustion and huge context payloads."""
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "\n# ... [truncated for AI prompt size limit] ...\n"
+
 class AIProvider(ABC):
     @abstractmethod
     def explain(self, type_name: str, description: str, severity: str, cwe_id: Optional[str], code_snippet: Optional[str]) -> str:
@@ -140,10 +148,13 @@ class OpenAIProvider(AIProvider):
             logger.warning(f"AI Provider request timed out ({e}), falling back to templates")
         elif isinstance(e, AuthenticationError) or "401" in err_msg or "auth" in err_msg.lower() or "invalid api key" in err_msg.lower():
             logger.warning(f"AI Provider authentication failed (invalid API key: {e}), falling back to templates")
+        elif "429" in err_msg or "rate limit" in err_msg.lower() or "ratelimit" in err_msg.lower():
+            logger.warning(f"AI Provider rate limit (429) hit during {operation}, gracefully falling back to deterministic templates.")
         else:
             logger.warning(f"AI Provider {operation} failed ({e}), falling back to templates")
 
     def explain(self, type_name: str, description: str, severity: str, cwe_id: Optional[str], code_snippet: Optional[str]) -> str:
+        safe_snippet = _cap_prompt_text(code_snippet, max_len=2000)
         prompt = f"""
 Analyze the following security finding and write a detailed explanation.
 Vulnerability Type: {type_name}
@@ -152,7 +163,7 @@ CWE ID: {cwe_id or "N/A"}
 Description: {description}
 Code Snippet:
 ```python
-{code_snippet or "N/A"}
+{safe_snippet or "N/A"}
 ```
 
 You MUST structure your response exactly as follows:
@@ -185,20 +196,22 @@ Give general guidance on how to fix this class of vulnerability.
             return self._fallback.explain(type_name, description, severity, cwe_id, code_snippet)
 
     def generate_fix(self, type_name: str, description: str, code_snippet: Optional[str], full_file_source: str) -> str:
+        safe_snippet = _cap_prompt_text(code_snippet, max_len=2000)
+        safe_full_source = _cap_prompt_text(full_file_source, max_len=8000)
         prompt = f"""
 You are an expert secure coder. Fix the security vulnerability in the provided source code.
 Vulnerability Type: {type_name}
 Description: {description}
 Code Snippet with vulnerability:
 ```
-{code_snippet or "N/A"}
+{safe_snippet or "N/A"}
 ```
 
 Here is the full source code of the file containing the vulnerability. Modify it to fix the issue securely.
 
 Full File Source:
 ```
-{full_file_source}
+{safe_full_source}
 ```
 
 Instructions:
@@ -230,15 +243,17 @@ Instructions:
             return self._fallback.generate_fix(type_name, description, code_snippet, full_file_source)
 
     def ask_question(self, question: str, type_name: str, description: str, code_snippet: Optional[str], full_file_source: Optional[str]) -> str:
+        safe_snippet = _cap_prompt_text(code_snippet, max_len=2000)
+        safe_full_source = _cap_prompt_text(full_file_source, max_len=8000)
         context_parts = []
         if type_name and type_name != "General security question":
             context_parts.append(f"- Type: {type_name}")
         if description:
             context_parts.append(f"- Description: {description}")
-        if code_snippet:
-            context_parts.append(f"- Code Snippet:\n```\n{code_snippet}\n```")
-        if full_file_source:
-            context_parts.append(f"- Full File Source:\n```\n{full_file_source}\n```")
+        if safe_snippet:
+            context_parts.append(f"- Code Snippet:\n```\n{safe_snippet}\n```")
+        if safe_full_source:
+            context_parts.append(f"- Full File Source:\n```\n{safe_full_source}\n```")
 
         if context_parts:
             context_section = "Vulnerability details:\n" + "\n".join(context_parts) + "\n\n"

@@ -26,6 +26,8 @@ export type ScanHistory = {
   status: string;
   warnings?: string[] | null;
   dependency_summary?: DependencySummary | null;
+  engines_run?: string[] | null;
+  incomplete?: boolean;
 };
 
 export async function listProjects(): Promise<Project[]> {

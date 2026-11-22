@@ -51,9 +51,21 @@ def generate_json_report(project, scan, vulnerabilities: List) -> str:
     return json.dumps(report_dict, indent=2)
 
 
+def _escape_csv_cell(val) -> str:
+    """
+    Prevents CSV Formula Injection (DDE attacks) in spreadsheet applications.
+    If a cell value starts with '=', '+', '-', '@', '\t', or '\r', prefix it with a single quote.
+    """
+    if val is None:
+        return ""
+    s = str(val)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{s}"
+    return s
+
 def generate_csv_report(vulnerabilities: List) -> str:
     """
-    Generates a CSV formatted string of the scan vulnerabilities.
+    Generates a CSV formatted string of the scan vulnerabilities with formula injection escaping.
     """
     output = io.StringIO()
     writer = csv.writer(output)
@@ -74,7 +86,7 @@ def generate_csv_report(vulnerabilities: List) -> str:
     ])
     
     for vuln in vulnerabilities:
-        writer.writerow([
+        raw_row = [
             str(vuln.id),
             vuln.file.filepath,
             vuln.line_number,
@@ -86,6 +98,7 @@ def generate_csv_report(vulnerabilities: List) -> str:
             vuln.source_tool,
             "Yes" if vuln.fixed else "No",
             vuln.description
-        ])
+        ]
+        writer.writerow([_escape_csv_cell(cell) for cell in raw_row])
         
     return output.getvalue()

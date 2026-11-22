@@ -1,8 +1,32 @@
 import type { ReactNode } from "react";
 
+function isSafeUrl(url: string): boolean {
+  if (!url) return false;
+  // Strip control characters, whitespace, tabs, and null bytes (RFC 3986 evasion tactics)
+  const sanitized = url.replace(/[\u0000-\u0020\u007F-\u009F\s]/g, "");
+
+  // Allowlist: Relative application routes (must not be protocol-relative //)
+  if (sanitized.startsWith("/") && !sanitized.startsWith("//")) {
+    return true;
+  }
+  if (sanitized.startsWith("#")) {
+    return true;
+  }
+
+  // Allowlist: Absolute URLs strictly restricted to http, https, and mailto
+  try {
+    const parsed = new URL(sanitized);
+    const protocol = parsed.protocol.toLowerCase();
+    return protocol === "http:" || protocol === "https:" || protocol === "mailto:";
+  } catch {
+    return false;
+  }
+}
+
 /** Minimal markdown renderer for backend-provided explanation/recommendation text. */
 function inline(text: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  // Matches **bold**, `code`, and [link](url)
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g).filter(Boolean);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) {
       return (
@@ -20,6 +44,25 @@ function inline(text: string): ReactNode[] {
           {part.slice(1, -1)}
         </code>
       );
+    }
+    const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+    if (linkMatch) {
+      const label = linkMatch[1] ?? "";
+      const href = linkMatch[2] ?? "";
+      if (isSafeUrl(href)) {
+        return (
+          <a
+            key={i}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline hover:text-primary/80"
+          >
+            {label}
+          </a>
+        );
+      }
+      return <span key={i} className="font-mono text-muted-foreground">{part}</span>;
     }
     return <span key={i}>{part}</span>;
   });

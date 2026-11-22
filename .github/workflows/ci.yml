@@ -1,0 +1,206 @@
+name: SentinelAI CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Backend Tests & PostgreSql Integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15.20-alpine3.24
+        env:
+          POSTGRES_DB: security_scanner_test
+          POSTGRES_USER: sentinel
+          POSTGRES_PASSWORD: testpassword123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libffi-dev git curl
+
+      - name: Install Semgrep CLI in dedicated venv
+        run: |
+          sudo python3 -m venv /opt/semgrep
+          sudo chown -R "$USER:$USER" /opt/semgrep
+          /opt/semgrep/bin/pip install --no-cache-dir --upgrade pip "setuptools>=78.1.1"
+          /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.183.0
+          /opt/semgrep/bin/pip install --no-cache-dir "mcp==1.30.0" "wcmatch>=11.2"
+          echo "/opt/semgrep/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Backend Test Suite
+        env:
+          ENV: test
+          TESTING: "1"
+          DATABASE_URL: postgresql://sentinel:testpassword123@localhost:5432/security_scanner_test
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: security_scanner_test
+          POSTGRES_USER: sentinel
+          POSTGRES_PASSWORD: testpassword123
+          SECRET_KEY: test-secret-key-minimum-32-characters-for-testing-purpose
+        run: |
+          pytest -v
+
+  frontend-build-and-audit:
+    name: Frontend Build & NPM Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend Dependencies
+        run: |
+          npm --prefix frontend ci
+
+      - name: Build Frontend Application
+        run: |
+          npm --prefix frontend run build
+
+      - name: Run NPM Audit (High & Critical)
+        run: |
+          npm --prefix frontend audit --omit=dev --audit-level=high
+
+  security-scans:
+    name: Security Scans (Pip-Audit, Gitleaks, Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Run Pip-Audit on Application Python Dependencies
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: backend/requirements.txt
+
+      - name: Run Gitleaks Secret Scanner
+        run: |
+          docker run --rm -v "${{ github.workspace }}:/repo" -w /repo zricethezav/gitleaks:latest git --baseline-path=/repo/.gitleaks-baseline.json --redact --verbose
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build Backend Docker Image
+        run: |
+          docker build -t sentinel-backend:local ./backend
+
+      - name: Build Caddy Frontend Docker Image
+        run: |
+          docker build -t sentinel-caddy:local -f deploy/caddy/Dockerfile .
+
+      - name: Trivy Scan Backend Image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: "sentinel-backend:local"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: "true"
+          trivyignores: ".trivyignore.yaml"
+          severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
+
+      - name: Trivy Scan Caddy Image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: "sentinel-caddy:local"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: "true"
+          trivyignores: ".trivyignore.yaml"
+          severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
+
+      - name: Trivy Scan Postgres Image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: "postgres:15.20-alpine3.24"
+          format: "table"
+          exit-code: "1"
+          ignore-unfixed: "true"
+          trivyignores: ".trivyignore.yaml"
+          severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
+
+      - name: Trivy Scan Upstream Caddy Image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: "caddy:alpine"
+          format: "table"
+          exit-code: "0"
+          ignore-unfixed: "true"
+          severity: "CRITICAL,HIGH"
+          version: "v0.76.2"
+
+  semgrep-dep-audit:
+    name: Pip-Audit Inside Backend Image (/opt/semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build Backend Docker Image
+        run: |
+          docker build -t sentinel-backend:local ./backend
+
+      - name: Run Pip-Audit Against /opt/semgrep Isolated Virtualenv
+        # Audit transitive dependencies of isolated Semgrep CLI in /opt/semgrep via pip freeze.
+        # Accepted advisories (MCP offline dependency; semgrep/commands/mcp.py):
+        # CVE-2026-59951:  https://osv.dev/vulnerability/CVE-2026-59951  (expires 2026-12-31)
+        # CVE-2026-116685: https://osv.dev/vulnerability/CVE-2026-116685 (expires 2026-12-31)
+        # CVE-2026-116684: https://osv.dev/vulnerability/CVE-2026-116684 (expires 2026-12-31)
+        # CVE-2026-116686: https://osv.dev/vulnerability/CVE-2026-116686 (expires 2026-12-31)
+        # CVE-2026-114603: https://osv.dev/vulnerability/CVE-2026-114603 (expires 2026-12-31)
+        # CVE-2026-126360: https://osv.dev/vulnerability/CVE-2026-126360 (expires 2026-12-31)
+        run: |
+          docker run --rm -u root sentinel-backend:local sh -c "
+            pip install --no-cache-dir pip-audit && \
+            /opt/semgrep/bin/pip freeze > /tmp/semgrep-reqs.txt && \
+            pip-audit -r /tmp/semgrep-reqs.txt --no-deps --disable-pip \
+              --ignore-vuln CVE-2026-59951 \
+              --ignore-vuln CVE-2026-116685 \
+              --ignore-vuln CVE-2026-116684 \
+              --ignore-vuln CVE-2026-116686 \
+              --ignore-vuln CVE-2026-114603 \
+              --ignore-vuln CVE-2026-126360
+          "

@@ -1,7 +1,8 @@
 import os
 import logging
+import concurrent.futures
 from collections import defaultdict
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 from backend.detectors.schema import Finding, DetectorError
 from backend.detectors.bandit_detector import BanditDetector
 from backend.detectors.semgrep_detector import SemgrepDetector
@@ -43,7 +44,16 @@ class Orchestrator:
         self.warnings: List[str] = []
         self.engines_run: List[str] = []
 
-    def scan_project(self, project_dir: str) -> List[Finding]:
+    def scan_project(self, project_dir: str, engine_timeout: Optional[int] = None) -> List[Finding]:
+        """
+        Scan the project directory. Each engine runs with an optional per-engine timeout.
+        A timed-out engine is excluded from engines_run and a warning is added; the scan
+        proceeds with the remaining engines and completes with status 'completed' + warnings.
+        
+        Args:
+            project_dir: Absolute path to the project upload directory.
+            engine_timeout: Per-engine timeout in seconds (None = no per-engine limit).
+        """
         self.warnings = []
         self.engines_run = []
         # 1. Detect languages present in the project
@@ -61,12 +71,29 @@ class Orchestrator:
 
         raw_findings: List[Finding] = []
 
+        def _run_engine(name: str, fn, *args):
+            """Run a single engine with optional per-engine timeout. Returns (findings, timed_out)."""
+            if engine_timeout is None:
+                return fn(*args), False
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                fut = ex.submit(fn, *args)
+                try:
+                    return fut.result(timeout=engine_timeout), False
+                except concurrent.futures.TimeoutError:
+                    return [], True
+
         # 2. Run Bandit & AST linter if Python is present
         if "python" in languages:
             logger.info("Running Bandit linter...")
             try:
-                raw_findings.extend(self.bandit.scan(project_dir))
-                self.engines_run.append("bandit")
+                findings, timed_out = _run_engine("bandit", self.bandit.scan, project_dir)
+                if timed_out:
+                    warn_msg = f"Engine 'bandit' timed out after {engine_timeout}s and was excluded from results."
+                    logger.warning(warn_msg)
+                    self.warnings.append(warn_msg)
+                else:
+                    raw_findings.extend(findings)
+                    self.engines_run.append("bandit")
             except Exception as e:
                 warn_msg = f"Bandit scan failed: {e}"
                 logger.warning(warn_msg)
@@ -74,8 +101,14 @@ class Orchestrator:
             
             logger.info("Running Custom AST linter...")
             try:
-                raw_findings.extend(self.ast.scan(project_dir))
-                self.engines_run.append("ast")
+                findings, timed_out = _run_engine("ast", self.ast.scan, project_dir)
+                if timed_out:
+                    warn_msg = f"Engine 'ast' timed out after {engine_timeout}s and was excluded from results."
+                    logger.warning(warn_msg)
+                    self.warnings.append(warn_msg)
+                else:
+                    raw_findings.extend(findings)
+                    self.engines_run.append("ast")
             except Exception as e:
                 warn_msg = f"AST scan failed: {e}"
                 logger.warning(warn_msg)
@@ -86,8 +119,14 @@ class Orchestrator:
         if languages.intersection(semgrep_languages):
             logger.info("Running Semgrep scanner...")
             try:
-                raw_findings.extend(self.semgrep.scan(project_dir))
-                self.engines_run.append("semgrep")
+                findings, timed_out = _run_engine("semgrep", self.semgrep.scan, project_dir)
+                if timed_out:
+                    warn_msg = f"Engine 'semgrep' timed out after {engine_timeout}s and was excluded from results."
+                    logger.warning(warn_msg)
+                    self.warnings.append(warn_msg)
+                else:
+                    raw_findings.extend(findings)
+                    self.engines_run.append("semgrep")
             except DetectorError as e:
                 warn_msg = f"Semgrep scan failed: {e}"
                 logger.warning(warn_msg)

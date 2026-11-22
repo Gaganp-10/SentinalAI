@@ -1,0 +1,167 @@
+vulnerabilities:
+  - id: CVE-2025-47273
+    statement: Static SBOM metadata embedded in pip CycloneDX bom; active runtime environment has setuptools>=78.1.1 (84.2.1). https://osv.dev/vulnerability/CVE-2025-47273
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-59951
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
+    statement: Unreachable; Semgrep CLI runs offline without MCP network listener. https://osv.dev/vulnerability/CVE-2026-59951
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-116685
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
+    statement: Unreachable; MCP transport layer inactive during static analysis. https://osv.dev/vulnerability/CVE-2026-116685
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-116684
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
+    statement: Unreachable; no external MCP clients or untrusted JSON-RPC streams. https://osv.dev/vulnerability/CVE-2026-116684
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-116686
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/mcp-1.30.0.dist-info/METADATA
+    statement: Unreachable; remote MCP server negotiation is never invoked. https://osv.dev/vulnerability/CVE-2026-116686
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-114603
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/opentelemetry_api-1.37.0.dist-info/METADATA
+    statement: Unreachable; telemetry disabled via --metrics=off and --disable-version-check. https://osv.dev/vulnerability/CVE-2026-114603
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-126360
+    paths:
+      - opt/semgrep/lib/python3.13/site-packages/opentelemetry_api-1.37.0.dist-info/METADATA
+    statement: Unreachable; metric serialization/span propagation buffers not executed. https://osv.dev/vulnerability/CVE-2026-126360
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2025-61726
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2025-61726
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2025-61729
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2025-61729
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2025-68121
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2025-68121
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-111943
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-111943
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-25679
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-25679
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-27145
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-27145
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-32280
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-32280
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-32281
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-32281
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-32283
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-32283
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-33811
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-33811
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-33814
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-33814
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-33818
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-33818
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-39820
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-39820
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-39821
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-39821
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-39822
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-39822
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-39836
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-39836
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-42499
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-42499
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-42504
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-42504
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-56853
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-56853
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-56858
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-56858
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-56859
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-56859
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-56860
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-56860
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-56862
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-56862
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-78667
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-78667
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-78669
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-78669
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-97031
+    paths:
+      - usr/local/bin/gosu
+    statement: Unreachable; gosu executes strictly at container startup to step down from root to postgres user before daemon init. https://osv.dev/vulnerability/CVE-2026-97031
+    expired_at: 2026-12-31T23:59:59Z
+  - id: CVE-2026-86144
+    statement: Unreachable; PostgreSQL is deployed strictly internal without public network access and SentinelAI application issues no XML/xpath queries. Upstream postgres:15.20-alpine3.24 base image lacks rebuilt Alpine package 2.13.9-r3. https://osv.dev/vulnerability/CVE-2026-86144
+    expired_at: 2026-12-31T23:59:59Z

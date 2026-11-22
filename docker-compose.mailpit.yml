@@ -1,0 +1,41 @@
+# docker-compose.mailpit.yml — Mailpit SMTP/UI override for local prod testing
+# Usage: docker compose -f docker-compose.prod.yml -f docker-compose.mailpit.yml --env-file docker.env.prod.local up -d
+#
+# Mailpit listens on:
+#   - :1025  SMTP (containers reach it as "mailpit:1025")
+#   - :8025  Web UI (http://localhost:8025) — browse captured emails
+
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"   # Web UI (localhost only)
+      - "127.0.0.1:1025:1025"   # SMTP (localhost only)
+    expose:
+      - "1025"
+    environment:
+      MP_MAX_MESSAGES: 100
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    volumes:
+      - mailpit_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8025/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mailpit_data:
+    name: sentinel_local_mailpit_data
+

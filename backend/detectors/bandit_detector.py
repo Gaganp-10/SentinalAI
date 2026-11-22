@@ -6,6 +6,7 @@ import shutil
 import logging
 from typing import List
 from backend.detectors.schema import Finding
+from backend.detectors.process_runner import run_scanner_subprocess
 
 # Pattern Bandit uses: each line in the `code` field is prefixed with
 # "<line_number><one mandatory space><code_indentation><code>"
@@ -118,12 +119,9 @@ class BanditDetector:
             return []
 
         try:
-            # Run bandit: bandit -r <project_dir> -f json -q
-            result = subprocess.run(
-                ["bandit", "-r", project_dir, "-f", "json", "-q"],
-                capture_output=True,
-                text=True,
-                check=False
+            # Run bandit with process group isolation and timeout
+            result = run_scanner_subprocess(
+                ["bandit", "-r", project_dir, "-f", "json", "-q"]
             )
             
             output_str = result.stdout.strip()

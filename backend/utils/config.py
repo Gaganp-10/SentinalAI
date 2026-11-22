@@ -70,11 +70,28 @@ class Settings(BaseSettings):
     # CORS configuration
     ALLOWED_ORIGINS: Union[List[str], str] = ["*"]
 
-    # Abuse controls
+    # Abuse controls & Production Access
     ALLOW_SIGNUP: bool = True
+    GOOGLE_AUTH_ALLOWLIST: str = ""
     MAX_PROJECTS_PER_USER: Optional[int] = None
     MAX_DAILY_UPLOADS_PER_USER: Optional[int] = None
     MAX_DAILY_UPLOAD_MB_PER_USER: Optional[int] = None
+    MAX_USER_STORAGE_MB: Optional[int] = None
+
+    # Auth Rate Limiting
+    AUTH_RATE_LIMIT_LOGIN_PER_IP: int = 10
+    AUTH_RATE_LIMIT_LOGIN_PER_ACCOUNT: int = 10
+    AUTH_RATE_LIMIT_SIGNUP_PER_IP: int = 10
+    AUTH_RATE_LIMIT_SIGNUP_PER_ACCOUNT: int = 5
+
+    # Scan Controls
+    MAX_CONCURRENT_SCANS: int = 2
+    SCAN_TIMEOUT_SECONDS: int = 300
+    SCANNER_TIMEOUT_SECONDS: int = 300
+
+    # AI Controls
+    MAX_AI_EXPLANATIONS_PER_SCAN: int = 10
+    MAX_DAILY_COPILOT_CHATS_PER_USER: int = 50
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":

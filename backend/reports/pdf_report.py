@@ -205,8 +205,22 @@ def _build_pdf_html(project, scan, vulnerabilities: List) -> str:
     files_count = len(getattr(project, "files", []) or [])
     total = len(vulnerabilities)
 
+    engines_raw = getattr(scan, "engines_run", None)
+    if isinstance(engines_raw, str):
+        try:
+            engines_set = set(json.loads(engines_raw))
+        except Exception:
+            engines_set = {engines_raw}
+    elif isinstance(engines_raw, list):
+        engines_set = set(engines_raw)
+    else:
+        engines_set = set()
+    REQUIRED_ENGINES = {"bandit", "ast", "semgrep"}
+    is_incomplete = not REQUIRED_ENGINES.issubset(engines_set)
+
     score = _calc_score(vulnerabilities)
-    score_clr = _score_color(score)
+    score_clr = "#ca8a04" if is_incomplete else _score_color(score)
+    score_display = "—" if is_incomplete else str(score)
 
     # Severity counts
     counts = {s: 0 for s in _SEVERITY_ORDER}
@@ -531,14 +545,21 @@ pre.fix-box {
   {remain_cell}
 </tr>"""
 
+    incomplete_banner = """
+<div style="background-color: #fef3c7; border: 1pt solid #f59e0b; color: #b45309; padding: 8px 12px; margin-bottom: 14px; border-radius: 4px; font-weight: bold; font-size: 10pt;">
+  Incomplete scan: not a security assessment
+</div>
+""" if is_incomplete else ""
+
     score_and_breakdown = f"""
+{incomplete_banner}
 <table style="width: 100%; margin-bottom: 16px;">
   <tr>
     <td style="width: 120pt; vertical-align: top;">
       <div class="score-box">
         <div class="score-title">SECURITY SCORE</div>
-        <div class="score-num" style="color: {score_clr};">{score}</div>
-        <div class="score-sub">out of 100</div>
+        <div class="score-num" style="color: {score_clr};">{score_display}</div>
+        <div class="score-sub">{"Incomplete scan: not a security assessment" if is_incomplete else "out of 100"}</div>
       </div>
     </td>
     <td style="padding-left: 14px; vertical-align: top;">
@@ -553,7 +574,16 @@ pre.fix-box {
 
     # ── Findings Section ──────────────────────────────────────────────────────
     if not sorted_vulns:
-        findings_html = """
+        if is_incomplete:
+            findings_html = """
+<h2>Findings</h2>
+<div class="empty-state">
+  <div style="font-size:13pt; font-weight:bold; margin-bottom:4px; color:#b45309;">Incomplete scan</div>
+  <div style="font-size:9pt; color:#92400e;">One or more security analyzers timed out or did not run. This report does not represent a clean scan or complete security assessment.</div>
+</div>
+"""
+        else:
+            findings_html = """
 <h2>Findings</h2>
 <div class="empty-state">
   <div style="font-size:13pt; font-weight:bold; margin-bottom:4px;">No vulnerabilities found</div>

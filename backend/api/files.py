@@ -10,6 +10,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File as FastAPIFile, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Dict, Tuple
 from uuid import UUID
 
@@ -66,6 +67,42 @@ def record_user_upload(user_id: UUID, file_size: int = 0):
 def reset_upload_limits():
     """Helper for tests to reset in-memory history."""
     _user_daily_upload_history.clear()
+
+def check_volume_capacity(upload_path: str):
+    """
+    Refuses uploads if the storage volume holding uploads is >= 85% full.
+    """
+    try:
+        total, used, free = shutil.disk_usage(upload_path)
+        if total > 0:
+            pct_used = (used / total) * 100.0
+            if pct_used >= 85.0:
+                raise HTTPException(
+                    status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                    detail=f"Storage volume capacity critical ({pct_used:.1f}% used, threshold is 85%). Uploads temporarily disabled."
+                )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Could not determine disk usage for {upload_path}: {e}")
+
+def check_user_total_storage_cap(db: Session, user_id: UUID, incoming_bytes: int = 0):
+    """
+    Enforces MAX_USER_STORAGE_MB across all files owned by the user.
+    """
+    if settings.MAX_USER_STORAGE_MB is not None and settings.MAX_USER_STORAGE_MB >= 0:
+        current_total = (
+            db.query(func.coalesce(func.sum(DBFile.size), 0))
+            .join(Project, DBFile.project_id == Project.id)
+            .filter(Project.user_id == user_id)
+            .scalar()
+        ) or 0
+        limit_bytes = settings.MAX_USER_STORAGE_MB * 1024 * 1024
+        if current_total + incoming_bytes > limit_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"User cumulative storage limit exceeded ({settings.MAX_USER_STORAGE_MB} MB). Delete older projects or files before uploading."
+            )
 
 # ─── Step 4 limits (canonical values, read from config) ────────────────────────
 # MAX_ZIP_FILES=5000          — counted on KEPT files only (after junk/skip)
@@ -196,6 +233,24 @@ def upload_files(
 
     # Setup safe base directory path for uploads
     base_upload_path = os.path.abspath(settings.UPLOAD_DIR)
+    os.makedirs(base_upload_path, exist_ok=True)
+
+    # Check storage volume capacity threshold (85% limit)
+    check_volume_capacity(base_upload_path)
+
+    # Estimate incoming file size from Content-Length header for early quota check.
+    # This is a best-effort check; the final size is validated after extraction.
+    incoming_size_estimate = 0
+    content_length_hdr = request.headers.get("content-length")
+    if content_length_hdr:
+        try:
+            incoming_size_estimate = int(content_length_hdr)
+        except (ValueError, TypeError):
+            incoming_size_estimate = 0
+
+    # Check user storage quota (with incoming size estimate)
+    check_user_total_storage_cap(db, current_user.id, incoming_bytes=incoming_size_estimate)
+
     project_upload_dir = os.path.abspath(os.path.join(base_upload_path, str(project_id)))
     os.makedirs(project_upload_dir, exist_ok=True)
     project_upload_dir_real = os.path.realpath(project_upload_dir)
@@ -671,15 +726,21 @@ def download_file(
             detail="File not found"
         )
 
-    base_upload_dir = os.path.abspath(settings.UPLOAD_DIR)
-    project_dir = os.path.abspath(os.path.join(base_upload_dir, str(file_obj.project_id)))
-    full_file_path = os.path.abspath(os.path.join(project_dir, file_obj.filepath))
+    base_upload_dir = os.path.realpath(os.path.abspath(settings.UPLOAD_DIR))
+    project_dir = os.path.realpath(os.path.join(base_upload_dir, str(file_obj.project_id)))
+    candidate_path = os.path.normpath(os.path.join(project_dir, file_obj.filepath))
+    full_file_path = os.path.realpath(candidate_path)
 
-    # Path traversal safety check
-    if not full_file_path.startswith(project_dir) or not full_file_path.startswith(base_upload_dir):
+    # Path traversal and symlink confinement safety check
+    try:
+        common = os.path.commonpath([full_file_path, project_dir])
+    except ValueError:
+        common = ""
+
+    if common != project_dir or not full_file_path.startswith(project_dir):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: Invalid file path"
+            detail="Access denied: Invalid file path or symlink escape detected"
         )
 
     if not os.path.isfile(full_file_path):

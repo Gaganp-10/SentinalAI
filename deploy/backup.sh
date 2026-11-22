@@ -3,41 +3,64 @@
 # SentinelAI Automated Backup Script (PostgreSQL + Uploads Volume)
 #
 # Creates:
-#   1. PostgreSQL custom-format compressed dump (-Fc)
+#   1. PostgreSQL custom-format compressed dump (-Fc), validated with pg_restore -l
 #   2. Gzip-compressed tarball of the uploads volume
+#   3. SHA-256 checksums file for atomic verification on restore
 #
-# Features:
-#   - Automatic pruning: Keeps the latest 7 days of backups locally.
-#   - Optional private S3 sync (if S3_BUCKET environment variable is set).
-#   - Suitable for nightly cron execution (0 2 * * * /home/deploy/sentinel-ai/deploy/backup.sh)
+# Retention: keeps the newest KEEP_SETS complete backup sets (default 7).
+# Age-based deletion is intentionally NOT used; sets are pruned by count.
 # =============================================================================
 
 set -euo pipefail
+umask 077
+export MSYS_NO_PATHCONV=1
 
 BACKUP_DIR="${BACKUP_DIR:-$(pwd)/backups}"
-RETENTION_DAYS="${RETENTION_DAYS:-7}"
+KEEP_SETS="${KEEP_SETS:-7}"
 S3_BUCKET="${S3_BUCKET:-}"
+HC_PING_URL="${HC_PING_URL:-}"
+COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+ENV_FILE="${ENV_FILE:-./docker.env}"
 
-# Load docker.env if present
-if [[ -f "./docker.env" ]]; then
+COMPOSE_ENV_ARG=()
+if [[ -f "./docker.env.prod.local" ]]; then
+    ENV_FILE="./docker.env.prod.local"
+    COMPOSE_ENV_ARG=(--env-file "${ENV_FILE}")
     # shellcheck disable=SC2046
-    export $(grep -E '^(POSTGRES_USER|POSTGRES_DB)=' ./docker.env | xargs)
+    export $(grep -E '^(POSTGRES_USER|POSTGRES_DB)=' "${ENV_FILE}" | xargs)
+elif [[ -f "${ENV_FILE}" ]]; then
+    COMPOSE_ENV_ARG=(--env-file "${ENV_FILE}")
+    # shellcheck disable=SC2046
+    export $(grep -E '^(POSTGRES_USER|POSTGRES_DB)=' "${ENV_FILE}" | xargs)
 elif [[ -f "/home/deploy/sentinel-ai/docker.env" ]]; then
+    COMPOSE_ENV_ARG=(--env-file "/home/deploy/sentinel-ai/docker.env")
     # shellcheck disable=SC2046
     export $(grep -E '^(POSTGRES_USER|POSTGRES_DB)=' /home/deploy/sentinel-ai/docker.env | xargs)
+fi
+
+# Load S3_BUCKET (and optionally HC_PING_URL) from backup.env if present
+if [[ -f "/home/deploy/sentinel-ai/backup.env" ]]; then
+    # shellcheck disable=SC2046
+    export $(grep -E '^(S3_BUCKET|HC_PING_URL)=' /home/deploy/sentinel-ai/backup.env | xargs)
+elif [[ -f "./backup.env" ]]; then
+    # shellcheck disable=SC2046
+    export $(grep -E '^(S3_BUCKET|HC_PING_URL)=' ./backup.env | xargs)
 fi
 
 POSTGRES_USER="${POSTGRES_USER:-sentinel}"
 POSTGRES_DB="${POSTGRES_DB:-security_scanner}"
 
-# Identify container and volume names
-DB_CONTAINER="$(docker ps --filter "name=db" --format "{{.Names}}" | head -n 1)"
+# Identify container IDs via Docker Compose ps -q
+DB_CONTAINER="$(docker compose "${COMPOSE_ENV_ARG[@]}" -f "${COMPOSE_FILE}" ps -q db 2>/dev/null || true)"
 if [[ -z "${DB_CONTAINER}" ]]; then
     echo "ERROR: PostgreSQL database container is not running." >&2
     exit 1
 fi
 
-UPLOADS_VOLUME="$(docker volume ls --filter "name=uploads_data" --format "{{.Name}}" | head -n 1)"
+UPLOADS_VOLUME="$(docker volume ls --filter "name=uploads_data" --format "{{.Name}}" | grep "sentinel_prod" | head -n 1 || true)"
+if [[ -z "${UPLOADS_VOLUME}" ]]; then
+    UPLOADS_VOLUME="$(docker volume ls --filter "name=uploads_data" --format "{{.Name}}" | head -n 1 || true)"
+fi
 if [[ -z "${UPLOADS_VOLUME}" ]]; then
     echo "ERROR: Uploads volume 'uploads_data' not found." >&2
     exit 1
@@ -49,35 +72,95 @@ chmod 700 "${BACKUP_DIR}"
 TIMESTAMP="$(date -u +'%Y%m%d_%H%M%SZ')"
 DB_BACKUP_FILE="${BACKUP_DIR}/db_${TIMESTAMP}.dump"
 UPLOADS_BACKUP_FILE="${BACKUP_DIR}/uploads_${TIMESTAMP}.tar.gz"
+CHECKSUM_FILE="${BACKUP_DIR}/checksums_${TIMESTAMP}.sha256"
+
+DB_TMP="${DB_BACKUP_FILE}.tmp.$$"
+UPLOADS_TMP="${UPLOADS_BACKUP_FILE}.tmp.$$"
+
+cleanup() {
+    rm -f "${DB_TMP}" "${UPLOADS_TMP}"
+}
+trap cleanup EXIT INT TERM
 
 echo "=== [1/4] Dumping PostgreSQL database '${POSTGRES_DB}' ==="
-docker exec "${DB_CONTAINER}" pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc > "${DB_BACKUP_FILE}"
-chmod 600 "${DB_BACKUP_FILE}"
-echo "Database dump created: ${DB_BACKUP_FILE} ($(du -h "${DB_BACKUP_FILE}" | cut -f1))"
+docker exec "${DB_CONTAINER}" pg_dump -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Fc > "${DB_TMP}"
+
+# Validate dump: size > 0 and inspectable via pg_restore -l
+if [[ ! -s "${DB_TMP}" ]]; then
+    echo "ERROR: Database dump produced an empty file." >&2
+    exit 1
+fi
+
+if ! docker exec -i "${DB_CONTAINER}" pg_restore -l < "${DB_TMP}" > /dev/null 2>&1; then
+    echo "ERROR: Database dump validation failed (pg_restore -l rejected file)." >&2
+    exit 1
+fi
+
+mv "${DB_TMP}" "${DB_BACKUP_FILE}"
+echo "Database dump verified and saved: ${DB_BACKUP_FILE} ($(du -h "${DB_BACKUP_FILE}" | cut -f1))"
 
 echo "=== [2/4] Archiving uploads volume '${UPLOADS_VOLUME}' ==="
 docker run --rm \
     -v "${UPLOADS_VOLUME}:/uploads:ro" \
-    alpine:3.20 tar -czf - -C /uploads . > "${UPLOADS_BACKUP_FILE}"
-chmod 600 "${UPLOADS_BACKUP_FILE}"
-echo "Uploads archive created: ${UPLOADS_BACKUP_FILE} ($(du -h "${UPLOADS_BACKUP_FILE}" | cut -f1))"
+    alpine:3.20 tar -czf - -C /uploads . > "${UPLOADS_TMP}"
 
-echo "=== [3/4] Enforcing local retention policy (keep ${RETENTION_DAYS} days) ==="
-find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name "db_*.dump" -o -name "uploads_*.tar.gz" \) -mtime "+${RETENTION_DAYS}" -exec rm -f {} +
-echo "Local backups older than ${RETENTION_DAYS} days purged."
+if [[ ! -s "${UPLOADS_TMP}" ]]; then
+    echo "ERROR: Uploads archive produced an empty file." >&2
+    exit 1
+fi
 
-echo "=== [4/4] S3 Bucket Upload ==="
+mv "${UPLOADS_TMP}" "${UPLOADS_BACKUP_FILE}"
+echo "Uploads archive verified and saved: ${UPLOADS_BACKUP_FILE} ($(du -h "${UPLOADS_BACKUP_FILE}" | cut -f1))"
+
+echo "=== [3/4] Generating cryptographic SHA-256 checksums ==="
+(
+    cd "${BACKUP_DIR}"
+    sha256sum "db_${TIMESTAMP}.dump" "uploads_${TIMESTAMP}.tar.gz" > "${CHECKSUM_FILE}"
+)
+echo "Checksums saved to ${CHECKSUM_FILE}"
+
+echo "=== [4/4] Pruning old backup sets (keep newest ${KEEP_SETS}) ==="
+# Collect all complete sets: a set is complete when all 3 files share a timestamp.
+# Sort timestamps descending; delete everything beyond KEEP_SETS complete sets.
+mapfile -t ALL_TIMESTAMPS < <(
+    find "${BACKUP_DIR}" -maxdepth 1 -name "db_*.dump" 2>/dev/null \
+        | sed -E 's|.*/db_(.+)\.dump$|\1|' \
+        | sort -r
+)
+KEPT=0
+for TS in "${ALL_TIMESTAMPS[@]}"; do
+    # Only count complete sets (all 3 files must exist)
+    if [[ -f "${BACKUP_DIR}/db_${TS}.dump" && \
+          -f "${BACKUP_DIR}/uploads_${TS}.tar.gz" && \
+          -f "${BACKUP_DIR}/checksums_${TS}.sha256" ]]; then
+        KEPT=$(( KEPT + 1 ))
+        if [[ "${KEPT}" -gt "${KEEP_SETS}" ]]; then
+            echo "Pruning old set: ${TS}"
+            rm -f "${BACKUP_DIR}/db_${TS}.dump" \
+                  "${BACKUP_DIR}/uploads_${TS}.tar.gz" \
+                  "${BACKUP_DIR}/checksums_${TS}.sha256"
+        fi
+    fi
+done
+echo "Retained ${KEEP_SETS} newest complete backup set(s)."
+
 if [[ -n "${S3_BUCKET}" ]]; then
-    if command -v aws >/dev/null 2>&1; then
+    if command -v aws > /dev/null 2>&1; then
         echo "Uploading backups to s3://${S3_BUCKET}/sentinel-backups/..."
         aws s3 cp "${DB_BACKUP_FILE}" "s3://${S3_BUCKET}/sentinel-backups/db_${TIMESTAMP}.dump" --sse AES256
         aws s3 cp "${UPLOADS_BACKUP_FILE}" "s3://${S3_BUCKET}/sentinel-backups/uploads_${TIMESTAMP}.tar.gz" --sse AES256
+        aws s3 cp "${CHECKSUM_FILE}" "s3://${S3_BUCKET}/sentinel-backups/checksums_${TIMESTAMP}.sha256" --sse AES256
         echo "S3 sync complete."
     else
         echo "WARNING: S3_BUCKET is set but AWS CLI ('aws') is not installed. S3 upload skipped." >&2
     fi
-else
-    echo "S3_BUCKET not configured. Backups stored locally in ${BACKUP_DIR}."
 fi
 
 echo "Backup successful: db_${TIMESTAMP}.dump and uploads_${TIMESTAMP}.tar.gz"
+
+# Healthcheck ping (optional — set HC_PING_URL in backup.env)
+if [[ -n "${HC_PING_URL}" ]]; then
+    curl -fsS --retry 3 --max-time 10 "${HC_PING_URL}" > /dev/null 2>&1 \
+        && echo "Healthcheck ping sent to ${HC_PING_URL}" \
+        || echo "WARNING: Healthcheck ping failed (non-fatal)." >&2
+fi
