@@ -126,7 +126,7 @@ jobs:
           docker build -t sentinel-caddy:local -f deploy/caddy/Dockerfile .
 
       - name: Trivy Scan Backend Image
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: "sentinel-backend:local"
           format: "table"
@@ -137,7 +137,7 @@ jobs:
           version: "v0.76.2"
 
       - name: Trivy Scan Caddy Image
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: "sentinel-caddy:local"
           format: "table"
@@ -148,7 +148,7 @@ jobs:
           version: "v0.76.2"
 
       - name: Trivy Scan Postgres Image
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: "postgres:15.20-alpine3.24"
           format: "table"
@@ -159,7 +159,7 @@ jobs:
           version: "v0.76.2"
 
       - name: Trivy Scan Upstream Caddy Image
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: "caddy:alpine"
           format: "table"
