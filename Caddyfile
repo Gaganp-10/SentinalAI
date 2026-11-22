@@ -7,6 +7,12 @@
     {$ACME_CA:}
 }
 
+# Plain-HTTP internal healthcheck listener on loopback
+:8081 {
+    bind 127.0.0.1
+    respond /healthz 200
+}
+
 {$DOMAIN} {
     {$TLS_INTERNAL:}
 
