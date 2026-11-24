@@ -12,6 +12,8 @@ from backend.database.session import engine, Base, SessionLocal
 # Import all routers to mount them
 from backend.api import auth, projects, files, scans, vulnerabilities, reports, ai, owasp
 
+from contextlib import asynccontextmanager
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,22 +43,31 @@ def sweep_orphaned_scans(db_session=None):
         if db_session is None:
             session.close()
 
-# Initialize database tables on startup
-try:
-    logger.info("Initializing database tables...")
-    Base.metadata.create_all(bind=engine)
-    from backend.database.migration import run_db_migrations
-    run_db_migrations(engine)
-    logger.info("Database tables initialized successfully.")
-    sweep_orphaned_scans()
-except Exception as e:
-    logger.error(f"Failed to initialize database tables: {e}")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan context manager: executes database schema initialization,
+    required migrations under PostgreSQL advisory lock, and orphaned scan sweeps on startup.
+    Preserves fail-fast behavior by raising RuntimeError if initialization or migrations fail.
+    """
+    try:
+        from backend.database.migration import init_db_schema_and_migrations
+        init_db_schema_and_migrations(engine, base=Base)
+        sweep_orphaned_scans()
+    except Exception as e:
+        logger.critical("FATAL: Failed to initialize database schema or migrations: %s", e)
+        raise RuntimeError(f"Backend startup aborted due to schema/migration initialization failure: {e}") from e
+    yield
 
 # Initialize FastAPI application
+is_production = (settings.ENV or "").strip().lower() == "production"
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    openapi_url=None if is_production else "/openapi.json",
+    lifespan=lifespan,
 )
 
 # Configure CORS middleware
@@ -104,7 +115,14 @@ def health_check():
 def proxy_test(request: Request):
     """
     Diagnostic endpoint to verify client IP and HTTPS scheme propagation through reverse proxy.
+    Available only in development environments; disabled in production and other environments.
     """
+    env = (settings.ENV or "").strip().lower()
+    if env != "development":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Endpoint not found."
+        )
     client_ip = request.client.host if request.client else "unknown"
     return {
         "client_ip": client_ip,
@@ -119,6 +137,15 @@ def proxy_test(request: Request):
 
 _csp_rate_limit_lock = threading.Lock()
 _csp_rate_limit_records: dict[str, list[float]] = {}
+_last_csp_cleanup: float = 0.0
+MAX_CSP_RECORDS: int = 10000
+
+def reset_csp_rate_limits():
+    """Helper for unit tests to reset CSP rate limit records."""
+    global _last_csp_cleanup
+    with _csp_rate_limit_lock:
+        _csp_rate_limit_records.clear()
+        _last_csp_cleanup = 0.0
 
 @app.post("/api/csp-report", status_code=204)
 async def csp_report(request: Request):
@@ -128,6 +155,7 @@ async def csp_report(request: Request):
       - 16 KB payload size limit (HTTP 413)
       - Content-Type check (application/csp-report, application/json, or application/reports+json) (HTTP 415)
       - Per-IP rate limiting (60/min) (HTTP 429)
+      - Bounded memory storage (automatic expiration pruning & capacity ceiling rejection)
       - Sanitized, JSON-escaped single-line log output
     """
     # 1. Content-Type check
@@ -140,19 +168,37 @@ async def csp_report(request: Request):
         )
 
     # 2. Rate limiting (60 requests per minute per IP)
-    client_ip = request.headers.get("x-forwarded-for")
-    if client_ip:
-        client_ip = client_ip.split(",")[-1].strip()
-    elif request.client:
-        client_ip = request.client.host
-    else:
-        client_ip = "127.0.0.1"
+    from backend.api.auth import _get_client_ip
+    client_ip = _get_client_ip(request)
 
     now = time.time()
     cutoff = now - 60.0
+    global _last_csp_cleanup
     with _csp_rate_limit_lock:
+        # Periodic pruning of expired entries (every 60s or when table reaches MAX_CSP_RECORDS)
+        if now - _last_csp_cleanup > 60.0 or len(_csp_rate_limit_records) >= MAX_CSP_RECORDS:
+            stale_ips = [
+                ip for ip, timestamps in _csp_rate_limit_records.items()
+                if not timestamps or timestamps[-1] <= cutoff
+            ]
+            for ip in stale_ips:
+                del _csp_rate_limit_records[ip]
+            _last_csp_cleanup = now
+
+        # Reject untracked IPs when table is at capacity after cleanup (do not evict unexpired records)
+        if client_ip not in _csp_rate_limit_records and len(_csp_rate_limit_records) >= MAX_CSP_RECORDS:
+            logger.warning(
+                "CSP report rate limiter capacity reached with unexpired records; rejecting untracked IP %s",
+                client_ip
+            )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many CSP violation reports. Service busy or rate limit reached."
+            )
+
         hits = [ts for ts in _csp_rate_limit_records.get(client_ip, []) if ts > cutoff]
         if len(hits) >= 60:
+            _csp_rate_limit_records[client_ip] = hits
             logger.warning("CSP report rate limit exceeded for IP %s", client_ip)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

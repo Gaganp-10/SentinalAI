@@ -69,8 +69,9 @@ def create_test_user(db, username="hardened_user", email="hardened@example.com")
 # 1. Proxy Headers & HTTPS Scheme Verification
 # =============================================================================
 
-def test_proxy_headers_propagation(client: TestClient):
+def test_proxy_headers_propagation(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """Verifies that reverse-proxy headers (client IP and HTTPS scheme) reach FastAPI."""
+    monkeypatch.setattr(settings, "ENV", "development")
     res = client.get(
         "/api/proxy-test",
         headers={

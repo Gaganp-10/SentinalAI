@@ -52,5 +52,5 @@ ENV PYTHONPATH=/app
 # Run container process as non-root user
 USER appuser
 
-# Production entrypoint — proxy-headers enabled for trusted internal reverse proxy network
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.16.0.0/12,10.0.0.0/8,127.0.0.1"]
+# Production entrypoint — direct socket peer preserved for application-level trusted proxy verification
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-proxy-headers"]

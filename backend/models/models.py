@@ -14,6 +14,11 @@ class User(Base):
     hashed_password = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+    token_version = Column(Integer, default=1, nullable=False, server_default="1")
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("token_version", 1)
+        super().__init__(**kwargs)
 
     projects = relationship("Project", back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens = relationship(

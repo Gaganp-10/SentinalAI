@@ -326,3 +326,74 @@ def test_google_only_account_password_reset(client: TestClient, db: Session, mon
     })
     assert login_resp.status_code == 200
     assert "access_token" in login_resp.json()
+
+
+def test_jwt_session_revoked_after_password_reset(client: TestClient, db: Session, monkeypatch):
+    """
+    Verifies Requirement 3:
+    - Existing JWTs issued before password reset are revoked (return 401).
+    - Unrelated users' sessions are NOT affected (return 200).
+    - New JWT issued after logging in with the updated password is valid (returns 200).
+    """
+    captured_links = []
+    monkeypatch.setattr(
+        auth_module,
+        "send_password_reset_email",
+        lambda email, link: captured_links.append((email, link))
+    )
+    auth_module._reset_rate_limit_records.clear()
+
+    # 1. Create User A and User B
+    client.post("/auth/signup", json={
+        "username": "revocation_user_a",
+        "email": "revoc_a@example.com",
+        "password": "oldpassword123!"
+    })
+    client.post("/auth/signup", json={
+        "username": "revocation_user_b",
+        "email": "revoc_b@example.com",
+        "password": "userbpassword123!"
+    })
+
+    # 2. Login both users to acquire valid JWTs
+    resp_login_a = client.post("/auth/login", json={"username": "revocation_user_a", "password": "oldpassword123!"})
+    assert resp_login_a.status_code == 200
+    token_a_before = resp_login_a.json()["access_token"]
+
+    resp_login_b = client.post("/auth/login", json={"username": "revocation_user_b", "password": "userbpassword123!"})
+    assert resp_login_b.status_code == 200
+    token_b = resp_login_b.json()["access_token"]
+
+    # Both tokens work before reset
+    assert client.get("/auth/me", headers={"Authorization": f"Bearer {token_a_before}"}).status_code == 200
+    assert client.get("/auth/me", headers={"Authorization": f"Bearer {token_b}"}).status_code == 200
+
+    # 3. User A resets password
+    client.post("/auth/forgot-password", json={"email": "revoc_a@example.com"})
+    assert len(captured_links) == 1
+    raw_token = captured_links[0][1].split("token=")[1]
+
+    reset_resp = client.post("/auth/reset-password", json={
+        "token": raw_token,
+        "new_password": "newpassword123!"
+    })
+    assert reset_resp.status_code == 200
+
+    # 4. Old token for User A MUST now be revoked and rejected with 401
+    resp_revoked_a = client.get("/auth/me", headers={"Authorization": f"Bearer {token_a_before}"})
+    assert resp_revoked_a.status_code == 401
+    assert resp_revoked_a.json()["detail"] == "Could not validate credentials"
+
+    # 5. Unrelated User B's token MUST still be valid (no cross-user invalidation)
+    resp_unrelated_b = client.get("/auth/me", headers={"Authorization": f"Bearer {token_b}"})
+    assert resp_unrelated_b.status_code == 200
+    assert resp_unrelated_b.json()["username"] == "revocation_user_b"
+
+    # 6. User A logs in with new password -> new token works
+    resp_new_login_a = client.post("/auth/login", json={"username": "revocation_user_a", "password": "newpassword123!"})
+    assert resp_new_login_a.status_code == 200
+    token_a_after = resp_new_login_a.json()["access_token"]
+
+    resp_new_me_a = client.get("/auth/me", headers={"Authorization": f"Bearer {token_a_after}"})
+    assert resp_new_me_a.status_code == 200
+    assert resp_new_me_a.json()["username"] == "revocation_user_a"

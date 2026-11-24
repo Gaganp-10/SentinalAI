@@ -1,5 +1,6 @@
 import os
 import json
+import ipaddress
 from typing import List, Optional, Union
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator, model_validator
@@ -84,6 +85,11 @@ class Settings(BaseSettings):
     AUTH_RATE_LIMIT_SIGNUP_PER_IP: int = 10
     AUTH_RATE_LIMIT_SIGNUP_PER_ACCOUNT: int = 5
 
+    # Trusted Proxies (CIDR list or comma-separated string)
+    # Default for local development/standalone is loopback only.
+    # Production overrides this via environment variable (e.g. Caddy container static IP 172.28.0.2/32).
+    TRUSTED_PROXIES: Union[List[str], str] = ["127.0.0.1/32", "::1/128"]
+
     # Scan Controls
     MAX_CONCURRENT_SCANS: int = 2
     SCAN_TIMEOUT_SECONDS: int = 300
@@ -119,6 +125,39 @@ class Settings(BaseSettings):
                     f"Production/staging mode (ENV='{self.ENV}') DATABASE_URL contains default password 'postgres'."
                 )
         return self
+
+    @field_validator("TRUSTED_PROXIES", mode="before")
+    @classmethod
+    def assemble_trusted_proxies(cls, v: str | List[str]) -> List[str]:
+        items: List[str] = []
+        if isinstance(v, list):
+            items = [str(p).strip() for p in v if str(p).strip()]
+        elif isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                try:
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        items = [str(p).strip() for p in parsed if str(p).strip()]
+                    else:
+                        items = [p.strip() for p in v.split(",") if p.strip()]
+                except json.JSONDecodeError:
+                    items = [p.strip() for p in v.split(",") if p.strip()]
+            else:
+                items = [p.strip() for p in v.split(",") if p.strip()]
+        elif v is not None:
+            items = [str(v).strip()]
+
+        for item in items:
+            try:
+                if "/" in item:
+                    ipaddress.ip_network(item, strict=False)
+                else:
+                    ipaddress.ip_network(f"{item}/32" if ":" not in item else f"{item}/128", strict=False)
+            except ValueError as e:
+                raise ValueError(f"Invalid trusted proxy CIDR or IP configured in TRUSTED_PROXIES: {item!r}") from e
+
+        return items
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
