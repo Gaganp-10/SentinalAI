@@ -68,6 +68,7 @@ app = FastAPI(
     redoc_url=None if is_production else "/redoc",
     openapi_url=None if is_production else "/openapi.json",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 # Configure CORS middleware

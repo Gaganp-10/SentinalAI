@@ -397,3 +397,44 @@ def test_jwt_session_revoked_after_password_reset(client: TestClient, db: Sessio
     resp_new_me_a = client.get("/auth/me", headers={"Authorization": f"Bearer {token_a_after}"})
     assert resp_new_me_a.status_code == 200
     assert resp_new_me_a.json()["username"] == "revocation_user_a"
+
+
+def test_reset_password_fails_loudly_if_token_version_is_none(client: TestClient, db, caplog, monkeypatch):
+    """Verifies that reset_password fails with HTTP 500 and logs an error if user.token_version is None."""
+    import logging
+    from unittest.mock import patch
+    from sqlalchemy.orm import Query
+    from backend.models.models import User
+
+    captured_links = []
+    def mock_send_email(email, link):
+        captured_links.append((email, link))
+
+    monkeypatch.setattr(auth_module, "send_password_reset_email", mock_send_email)
+
+    client.post("/auth/signup", json={
+        "username": "null_tv_reset",
+        "email": "null_tv_reset@example.com",
+        "password": "oldpassword123!"
+    })
+
+    client.post("/auth/forgot-password", json={"email": "null_tv_reset@example.com"})
+    assert len(captured_links) == 1
+    raw_token = captured_links[0][1].split("token=")[1]
+
+    orig_first = Query.first
+    def mock_first(self):
+        res = orig_first(self)
+        if isinstance(res, User) and res.username == "null_tv_reset":
+            res.token_version = None
+        return res
+
+    with patch.object(Query, "first", mock_first):
+        with caplog.at_level(logging.ERROR):
+            reset_resp = client.post("/auth/reset-password", json={
+                "token": raw_token,
+                "new_password": "newpassword123!"
+            })
+            assert reset_resp.status_code == 500
+            assert "has null token_version" in caplog.text
+

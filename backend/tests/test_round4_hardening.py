@@ -112,6 +112,16 @@ def test_fastapi_redirect_preserves_https(client: TestClient):
     assert "/api" in location
 
 
+def test_fastapi_redirect_slashes_disabled(client: TestClient):
+    """
+    Verifies that redirect_slashes=False disables automatic trailing slash redirects,
+    preventing inadvertent plain http:// Location header generation behind reverse proxies.
+    """
+    res = client.get("/api/health/", follow_redirects=False)
+    assert res.status_code == 404
+
+
+
 # =============================================================================
 # 2. Authentication Rate Limiting (Login & Signup)
 # =============================================================================

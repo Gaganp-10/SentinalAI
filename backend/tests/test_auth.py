@@ -138,3 +138,36 @@ def test_jwt_token_version_validation_and_tampering(client: TestClient, db):
     resp6 = client.get("/auth/me", headers={"Authorization": f"Bearer {token_valid}"})
     assert resp6.status_code == 200
     assert resp6.json()["username"] == "jwt_version_test"
+
+
+def test_login_fails_loudly_if_token_version_is_none(client: TestClient, db, caplog):
+    """Verifies that login fails with HTTP 500 and logs an error if user.token_version is None."""
+    import logging
+    from unittest.mock import patch
+    from sqlalchemy.orm import Query
+    from backend.models.models import User
+    from backend.utils.security import get_password_hash
+
+    user = User(
+        username="null_tv_login",
+        email="null_tv_login@example.com",
+        hashed_password=get_password_hash("Password123!"),
+        is_active=True,
+        token_version=1,
+    )
+    db.add(user)
+    db.commit()
+
+    orig_first = Query.first
+    def mock_first(self):
+        res = orig_first(self)
+        if isinstance(res, User) and res.username == "null_tv_login":
+            res.token_version = None
+        return res
+
+    with patch.object(Query, "first", mock_first):
+        with caplog.at_level(logging.ERROR):
+            resp = client.post("/auth/login", json={"username": "null_tv_login", "password": "Password123!"})
+            assert resp.status_code == 500
+            assert "has null token_version" in caplog.text
+

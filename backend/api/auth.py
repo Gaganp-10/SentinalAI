@@ -410,12 +410,17 @@ def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_
         _login_failures.pop((norm_account, client_ip), None)
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    user_token_version = getattr(user, "token_version", 1) or 1
+    if user.token_version is None:
+        logger.error("User %s has null token_version", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
     return {
         "access_token": create_access_token(
             user.id,
             expires_delta=access_token_expires,
-            token_version=user_token_version
+            token_version=user.token_version
         ),
         "token_type": "bearer",
     }
@@ -685,9 +690,16 @@ def reset_password(
             detail="This reset link is invalid or has expired.",
         )
 
+    if user.token_version is None:
+        logger.error("User %s has null token_version", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
+
     # Update password and increment token_version within a single transaction to revoke active sessions
     user.hashed_password = get_password_hash(body.new_password)
-    user.token_version = (getattr(user, "token_version", 1) or 1) + 1
+    user.token_version = user.token_version + 1
     token_record.used_at = now
 
     # Invalidate all other unused tokens for this user
