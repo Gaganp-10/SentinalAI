@@ -71,6 +71,129 @@ jobs:
         run: |
           pytest -v
 
+  postgres-migration-smoke:
+    name: Postgres Migration Smoke
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15.20-alpine3.24
+        env:
+          POSTGRES_DB: security_scanner_smoke
+          POSTGRES_USER: sentinel
+          POSTGRES_PASSWORD: testpassword123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libffi-dev git curl
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Postgres Migration Smoke Test
+        env:
+          ENV: production
+          DATABASE_URL: postgresql://sentinel:testpassword123@localhost:5432/security_scanner_smoke
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: security_scanner_smoke
+          POSTGRES_USER: sentinel
+          POSTGRES_PASSWORD: testpassword123
+          SECRET_KEY: test-secret-key-minimum-32-characters-for-testing-purpose
+        run: |
+          python - << 'EOF'
+          import os
+          import sys
+          import asyncio
+          from sqlalchemy import create_engine, inspect, text
+
+          # In this non-test smoke execution, TESTING is unset so session.py binds to DATABASE_URL
+          from backend.database.session import engine, Base
+          from backend.database.migration import init_db_schema_and_migrations
+          from backend.main import lifespan, app
+
+          assert engine.url.drivername.startswith("postgresql"), f"Expected Postgres engine, got {engine.url.drivername}"
+
+          print("=== (a) Start app lifespan against empty DB & verify idempotence ===")
+          with engine.begin() as conn:
+              conn.execute(text("DROP TABLE IF EXISTS scan_findings, scan_history, vulnerabilities, files, projects, password_reset_tokens, users CASCADE;"))
+
+          async def run_lifespan():
+              async with lifespan(app):
+                  pass
+
+          asyncio.run(run_lifespan())
+
+          insp = inspect(engine)
+          tables = set(insp.get_table_names())
+          expected_tables = {"users", "projects", "files", "vulnerabilities", "scan_history", "scan_findings", "password_reset_tokens"}
+          assert expected_tables.issubset(tables), f"Missing tables: {expected_tables - tables}"
+
+          user_cols = {c["name"]: c for c in insp.get_columns("users")}
+          assert "token_version" in user_cols, "users.token_version column missing"
+          assert not user_cols["token_version"]["nullable"], "users.token_version must be NOT NULL"
+
+          # Run init_db_schema_and_migrations a second time to assert idempotence
+          init_db_schema_and_migrations(engine, base=Base)
+
+          insp2 = inspect(engine)
+          assert set(insp2.get_table_names()) == tables, "Table set changed after second migration run"
+          print("Part (a) passed successfully.")
+
+          print("=== (b) Restore v0.9.0 schema without token_version, migrate, assert backfill and NOT NULL ===")
+          with engine.begin() as conn:
+              conn.execute(text("DROP TABLE IF EXISTS scan_findings, scan_history, vulnerabilities, files, projects, password_reset_tokens, users CASCADE;"))
+              conn.execute(text("""
+                  CREATE TABLE users (
+                      id UUID PRIMARY KEY,
+                      username VARCHAR NOT NULL UNIQUE,
+                      email VARCHAR NOT NULL UNIQUE,
+                      hashed_password VARCHAR,
+                      created_at TIMESTAMP WITHOUT TIME ZONE,
+                      is_active BOOLEAN
+                  );
+                  INSERT INTO users (id, username, email, hashed_password, is_active)
+                  VALUES ('a0000000-0000-0000-0000-000000000001', 'legacy_user', 'legacy@example.com', 'hashed', true);
+              """))
+
+          insp_legacy = inspect(engine)
+          assert "token_version" not in [c["name"] for c in insp_legacy.get_columns("users")]
+
+          # Run migration
+          init_db_schema_and_migrations(engine, base=Base)
+
+          insp_migrated = inspect(engine)
+          migrated_cols = {c["name"]: c for c in insp_migrated.get_columns("users")}
+          assert "token_version" in migrated_cols, "token_version was not added"
+          assert not migrated_cols["token_version"]["nullable"], "token_version must be NOT NULL"
+
+          with engine.connect() as conn:
+              val = conn.execute(text("SELECT token_version FROM users WHERE username = 'legacy_user'")).scalar()
+              assert val == 1, f"Expected backfilled token_version=1, got {val}"
+
+          print("Part (b) passed successfully.")
+          print("All Postgres migration smoke assertions verified.")
+          EOF
+
   frontend-build-and-audit:
     name: Frontend Build & NPM Dependency Audit
     runs-on: ubuntu-latest

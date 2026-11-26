@@ -2,6 +2,8 @@ FROM python:3.13-slim
 
 # Install system dependencies required by psycopg2 compilation and general tooling.
 # curl is included so Semgrep can fetch remote rule sets if needed.
+# libzstd1 is explicitly installed to resolve CVE-2026-124851 (>= 1.5.7+dfsg-1+deb13u1).
+# apt & libapt-pkg7.0 are explicitly installed to resolve CVE-2026-109518 (>= 3.0.4).
 # Note: Pango/Cairo libraries are removed since WeasyPrint was replaced by xhtml2pdf.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -9,6 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     git \
     curl \
+    libzstd1 \
+    apt \
+    libapt-pkg7.0 \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libzstd1)" ge "1.5.7+dfsg-1+deb13u1" \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' libapt-pkg7.0)" ge "3.0.4" \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root group and user for security
@@ -52,5 +59,5 @@ ENV PYTHONPATH=/app
 # Run container process as non-root user
 USER appuser
 
-# Production entrypoint — proxy-headers enabled for trusted internal reverse proxy network
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=172.16.0.0/12,10.0.0.0/8,127.0.0.1"]
+# Production entrypoint — direct socket peer preserved for application-level trusted proxy verification
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-proxy-headers"]

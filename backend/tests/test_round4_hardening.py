@@ -69,8 +69,9 @@ def create_test_user(db, username="hardened_user", email="hardened@example.com")
 # 1. Proxy Headers & HTTPS Scheme Verification
 # =============================================================================
 
-def test_proxy_headers_propagation(client: TestClient):
+def test_proxy_headers_propagation(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     """Verifies that reverse-proxy headers (client IP and HTTPS scheme) reach FastAPI."""
+    monkeypatch.setattr(settings, "ENV", "development")
     res = client.get(
         "/api/proxy-test",
         headers={
@@ -109,6 +110,16 @@ def test_fastapi_redirect_preserves_https(client: TestClient):
     # In test context (no uvicorn proxy-header processing), http is expected.
     # Verify the redirect destination path contains /api.
     assert "/api" in location
+
+
+def test_fastapi_redirect_slashes_disabled(client: TestClient):
+    """
+    Verifies that redirect_slashes=False disables automatic trailing slash redirects,
+    preventing inadvertent plain http:// Location header generation behind reverse proxies.
+    """
+    res = client.get("/api/health/", follow_redirects=False)
+    assert res.status_code == 404
+
 
 
 # =============================================================================

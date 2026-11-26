@@ -1,41 +1,105 @@
 import os
 import pytest
-from backend.database.session import engine, SessionLocal, get_database_url
-from backend.models.models import User, Project
 from uuid import uuid4
+from sqlalchemy.engine.url import make_url
+from sqlalchemy.pool import StaticPool
+
+from backend.database.session import engine, SessionLocal, get_database_url
+from backend.models.models import User
+from backend.utils.config import settings
+
 
 def test_database_is_separate_from_app_db():
     """
-    Verifies Requirement 2:
-    Tests must run against a separate database (security_scanner_test or sqlite)
-    and CANNOT touch or connect to the application database (security_scanner).
+    Verifies that the test suite runs against an isolated, in-memory SQLite test database
+    and that its configuration cannot connect to or touch the configured application database,
+    regardless of whether the application database is named 'secdetector' or 'security_scanner'.
     """
-    db_name = engine.url.database or ""
-    # 1. Assert database is NOT the application database
-    assert db_name != "security_scanner", (
-        f"Active test engine database is '{db_name}', which is the application database!"
+    db_url = engine.url
+    db_driver = db_url.drivername
+
+    # 1. Proves isolation through the test engine's driver and precise in-memory SQLite configuration
+    assert db_driver == "sqlite", f"Active test engine '{db_url}' is not SQLite!"
+
+    raw_url = str(db_url).split("?")[0].strip()
+    assert db_url.database in (None, "", ":memory:") and raw_url in ("sqlite://", "sqlite:///", "sqlite:///:memory:"), (
+        f"SQLite test engine '{db_url}' is not an in-memory database!"
     )
-    # 2. Confirm it is either security_scanner_test or an in-memory/test sqlite
-    assert (
-        db_name.endswith("_test")
-        or "test" in db_name.lower()
-        or engine.url.drivername == "sqlite"
-    ), f"Unexpected test database name: '{db_name}'"
+    assert isinstance(engine.pool, StaticPool), (
+        "In-memory SQLite test engine must use StaticPool to preserve state across connections."
+    )
 
-    # Redacted connection URL format
-    redacted_url = engine.url.render_as_string(hide_password=True)
-    assert "***" in redacted_url or "[REDACTED]" in redacted_url or not engine.url.password
-    assert "security_scanner_test" in redacted_url or engine.url.drivername == "sqlite"
+    # 2. Assert the active test engine does NOT point to the application database
+    app_url = make_url(settings.sqlalchemy_database_uri)
+    assert not (
+        db_driver == app_url.drivername
+        and db_url.host == app_url.host
+        and db_url.port == app_url.port
+        and db_url.database == app_url.database
+    ), f"CRITICAL: Active test engine connects to application database '{db_url.database}'!"
 
 
-def test_test_database_cannot_touch_app_database():
+def test_test_database_rejects_file_based_sqlite(monkeypatch):
     """
-    Inserts a canary record into the test database and proves that the
-    application database 'security_scanner' is completely unaffected.
+    Verifies that file-based SQLite database URLs are strictly rejected in test mode.
+    Only genuinely in-memory SQLite URLs ('sqlite://') are permitted.
+    """
+    file_sqlite_urls = [
+        "sqlite:///./some_existing_database.db",
+        "sqlite:///app.db",
+        "sqlite:///./test_runner.db",
+        "sqlite:////tmp/test.db",
+        "sqlite:///C:/path/to/db.sqlite",
+    ]
+    for url in file_sqlite_urls:
+        monkeypatch.setenv("TEST_DATABASE_URL", url)
+        with pytest.raises(RuntimeError, match="Non-in-memory SQLite database.*rejected"):
+            get_database_url()
+
+
+def test_test_database_rejects_all_non_sqlite_databases(monkeypatch):
+    """
+    Verifies that get_database_url() strictly and unconditionally rejects non-SQLite databases:
+    - Application database URLs (secdetector, security_scanner, or settings.DATABASE_URL)
+    - Any PostgreSQL database URL (with or without ALLOW_POSTGRES_TEST_DB)
+    - Any other external database engines (MySQL, Oracle, etc.)
+    """
+    non_sqlite_urls = [
+        "postgresql://postgres:pass@localhost:5433/secdetector",
+        "postgresql://postgres:pass@localhost:5432/security_scanner",
+        settings.sqlalchemy_database_uri,
+        "postgresql://postgres:pass@localhost:5432/security_scanner_test",
+        "postgresql://postgres:pass@localhost:5432/test_db",
+        "mysql://root:pass@localhost:3306/testdb",
+    ]
+    # Even if an environment attempts an opt-in, non-SQLite databases must be rejected unconditionally
+    monkeypatch.setenv("ALLOW_POSTGRES_TEST_DB", "1")
+
+    for url in non_sqlite_urls:
+        monkeypatch.setenv("TEST_DATABASE_URL", url)
+        with pytest.raises(RuntimeError, match="rejected in test mode"):
+            get_database_url()
+
+
+def test_test_database_defaults_to_in_memory_sqlite_when_unset(monkeypatch):
+    """
+    Verifies that when TEST_DATABASE_URL is unset, get_database_url() deterministically
+    defaults to in-memory SQLite ('sqlite://').
+    """
+    monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+    assert get_database_url() == "sqlite://"
+
+
+def test_test_engine_operates_in_memory_without_application_connection():
+    """
+    Verifies that test operations strictly execute within the isolated in-memory test database:
+    - Writes, reads, and rolls back records via SessionLocal without contacting the application database.
+    - Does not generate persistent database files on disk.
+    - Tests prove isolation through configuration and local verification rather than contacting the real database.
     """
     db = SessionLocal()
-    canary_username = f"canary_test_isolation_{uuid4().hex[:8]}"
-    canary_email = f"{canary_username}@test.com"
+    canary_username = f"canary_isolated_{uuid4().hex[:8]}"
+    canary_email = f"{canary_username}@test.local"
 
     try:
         user = User(
@@ -47,30 +111,18 @@ def test_test_database_cannot_touch_app_database():
         db.commit()
         db.refresh(user)
 
-        # Record exists in test DB
-        assert db.query(User).filter(User.username == canary_username).first() is not None
+        # Record exists and is retrievable within isolated test database
+        queried = db.query(User).filter(User.username == canary_username).first()
+        assert queried is not None
+        assert queried.email == canary_email
 
-        # Verify application DB 'security_scanner' does not contain this canary
-        # Connect explicitly to the app database to confirm absence
-        from sqlalchemy import create_engine
-        from backend.utils.config import settings
+        # Engine is confirmed in-memory SQLite
+        assert engine.url.drivername == "sqlite"
+        assert engine.url.database in (None, "", ":memory:")
 
-        app_db_url = settings.sqlalchemy_database_uri
-        if not app_db_url.startswith("sqlite") and "db:5432" in app_db_url:
-            # We are running inside container with postgres access
-            app_engine = create_engine(app_db_url)
-            from sqlalchemy.orm import sessionmaker
-            AppSession = sessionmaker(bind=app_engine)
-            app_db = AppSession()
-            try:
-                found_in_app_db = app_db.query(User).filter(User.username == canary_username).first()
-                assert found_in_app_db is None, (
-                    "CRITICAL LEAK: Record written in test appeared in the application database!"
-                )
-            finally:
-                app_db.close()
+        # Confirm no persistent test database file was created on disk
+        assert not os.path.exists("test_runner.db")
     finally:
-        # Cleanup canary from test database
         user_in_db = db.query(User).filter(User.username == canary_username).first()
         if user_in_db:
             db.delete(user_in_db)

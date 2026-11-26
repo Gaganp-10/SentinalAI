@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 import jwt as pyjwt
 from jwt.exceptions import InvalidTokenError as JWTError
 from pydantic import ValidationError
@@ -13,6 +14,9 @@ import hashlib
 import logging
 import time
 import threading
+import os
+import sys
+import ipaddress
 
 from backend.database.session import get_db, SessionLocal
 from backend.models.models import User, PasswordResetToken
@@ -63,19 +67,129 @@ def reset_auth_rate_limits():
         _reset_rate_limit_records.clear()
         _login_failures.clear()
 
+def get_trusted_proxy_networks() -> list:
+    """
+    Parses and returns the configured trusted proxy CIDR networks.
+    """
+    raw = settings.TRUSTED_PROXIES
+    items = raw if isinstance(raw, list) else [p.strip() for p in str(raw).split(",") if p.strip()]
+    networks = []
+    for item in items:
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            if "/" in item:
+                networks.append(ipaddress.ip_network(item, strict=False))
+            else:
+                networks.append(ipaddress.ip_network(f"{item}/32" if ":" not in item else f"{item}/128", strict=False))
+        except ValueError as e:
+            logger.warning("Invalid trusted proxy CIDR configured: %r: %s", item, e)
+    return networks
+
 def _get_client_ip(request: Request) -> str:
     """
-    Extracts the client IP address. When behind a reverse proxy (Caddy),
-    uses the verified remote address from X-Forwarded-For (rightmost proxy hop).
+    Extracts and validates the client IP address.
+    Strictly verifies that the direct socket peer belongs to TRUSTED_PROXIES
+    before inspecting X-Forwarded-For. If the connecting peer is untrusted,
+    X-Forwarded-For is ignored completely and the verified peer IP is returned.
+    Validates all forwarded addresses with Python's ipaddress module.
     """
+    is_test_env = (
+        settings.ENV != "production"
+        and (
+            settings.ENV == "development"
+            or os.getenv("TESTING") == "1"
+            or "pytest" in sys.modules
+            or bool(os.getenv("PYTEST_CURRENT_TEST"))
+        )
+    )
+
+    peer_host = request.client.host if request.client else None
+
+    # Handle Starlette TestClient explicitly for test-only compatibility
+    # Never treat testclient as a trusted production proxy
+    if peer_host == "testclient":
+        if is_test_env:
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                raw_forwarded = forwarded.strip()
+                if not raw_forwarded or "," in raw_forwarded:
+                    logger.warning("Unexpected multi-value or comma-formatted X-Forwarded-For in testclient: %r. Falling back to loopback.", forwarded)
+                    return "127.0.0.1"
+                try:
+                    ipaddress.ip_address(raw_forwarded)
+                    return raw_forwarded
+                except ValueError:
+                    return "127.0.0.1"
+            return "127.0.0.1"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid client socket peer address."
+            )
+
+    if not peer_host:
+        if is_test_env:
+            return "127.0.0.1"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot establish client connection address."
+        )
+
+    try:
+        peer_addr = ipaddress.ip_address(peer_host)
+        if isinstance(peer_addr, ipaddress.IPv6Address) and peer_addr.ipv4_mapped:
+            peer_addr = peer_addr.ipv4_mapped
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid socket peer address."
+        )
+
+    trusted_nets = get_trusted_proxy_networks()
+    is_trusted = any(peer_addr in net for net in trusted_nets)
+
+    # 1. If peer is UNTRUSTED: ignore forwarded headers entirely and return peer_addr
+    if not is_trusted:
+        return str(peer_addr)
+
+    # 2. If peer is TRUSTED: parse X-Forwarded-For
     forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        ips = [ip.strip() for ip in forwarded.split(",") if ip.strip()]
-        if ips:
-            return ips[-1]
-    if request.client and request.client.host and request.client.host != "testclient":
-        return request.client.host
-    return "127.0.0.1"
+    if not forwarded:
+        # Trusted proxy connected without X-Forwarded-For: fall back to the proxy's IP itself
+        return str(peer_addr)
+
+    raw_forwarded = forwarded.strip()
+    if not raw_forwarded:
+        return str(peer_addr)
+
+    # Caddy strictly overwrites X-Forwarded-For with {remote_host} (a single client IP).
+    # Commas indicate multi-value or empty-segment malformed formatting (e.g. "ip,", ",ip", "ip, ip").
+    # Empty segments, multiple values, and unexpected formatting must not be silently normalized.
+    if "," in raw_forwarded:
+        logger.warning(
+            "Unexpected multi-value or comma-formatted X-Forwarded-For from trusted proxy %s: %r. Falling back to proxy IP.",
+            peer_addr,
+            forwarded,
+        )
+        return str(peer_addr)
+
+    try:
+        client_addr = ipaddress.ip_address(raw_forwarded)
+        if isinstance(client_addr, ipaddress.IPv6Address) and client_addr.ipv4_mapped:
+            client_addr = client_addr.ipv4_mapped
+        return str(client_addr)
+    except ValueError:
+        # Malformed/unparseable forwarded IP:
+        # Do NOT fall back to shared loopback rate-limit identity for real requests!
+        # Use the verified peer IP.
+        logger.warning(
+            "Trusted proxy %s sent invalid X-Forwarded-For IP %r. Using verified peer IP.",
+            peer_addr,
+            raw_forwarded,
+        )
+        return str(peer_addr)
 
 def _process_forgot_password(email: str) -> None:
     """
@@ -149,6 +263,10 @@ def get_current_user(db: Session = Depends(get_db), credentials: HTTPAuthorizati
             user_id = uuid.UUID(user_id_str)
         except ValueError:
             raise credentials_exception
+
+        raw_token_version = payload.get("token_version")
+        if raw_token_version is None or type(raw_token_version) is not int or raw_token_version < 1:
+            raise credentials_exception
     except (JWTError, ValidationError):
         raise credentials_exception
         
@@ -157,6 +275,10 @@ def get_current_user(db: Session = Depends(get_db), credentials: HTTPAuthorizati
         raise credentials_exception
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
+
+    user_token_version = getattr(user, "token_version", 1) or 1
+    if raw_token_version != user_token_version:
+        raise credentials_exception
     return user
 
 
@@ -187,32 +309,34 @@ def signup(user_in: UserCreate, request: Request, db: Session = Depends(get_db))
             detail="Too many signup attempts for this account. Please try again later."
         )
 
-    # Check if username exists
-    existing_username = db.query(User).filter(User.username == user_in.username).first()
-    if existing_username:
+    # Check if username or email exists (unified check to prevent account enumeration)
+    existing_user = db.query(User).filter(
+        (User.username == user_in.username) | (User.email == user_in.email)
+    ).first()
+    if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The user with this username already exists in the system."
+            detail="An account with this username or email already exists."
         )
-        
-    # Check if email exists
-    existing_email = db.query(User).filter(User.email == user_in.email).first()
-    if existing_email:
+
+    try:
+        db_user = User(
+            username=user_in.username,
+            email=user_in.email,
+            hashed_password=get_password_hash(user_in.password),
+            is_active=True,
+            token_version=1
+        )
+        db.add(db_user)
+        db.commit()
+        db.refresh(db_user)
+        return db_user
+    except IntegrityError:
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="The user with this email already exists in the system."
+            detail="An account with this username or email already exists."
         )
-        
-    db_user = User(
-        username=user_in.username,
-        email=user_in.email,
-        hashed_password=get_password_hash(user_in.password),
-        is_active=True
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
 
 
 @router.post("/login", response_model=Token)
@@ -286,8 +410,18 @@ def login(login_data: LoginRequest, request: Request, db: Session = Depends(get_
         _login_failures.pop((norm_account, client_ip), None)
         
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    if user.token_version is None:
+        logger.error("User %s has null token_version", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
     return {
-        "access_token": create_access_token(user.id, expires_delta=access_token_expires),
+        "access_token": create_access_token(
+            user.id,
+            expires_delta=access_token_expires,
+            token_version=user.token_version
+        ),
         "token_type": "bearer",
     }
 
@@ -352,11 +486,20 @@ async def verify_google_token(token: str) -> dict:
 
 
 @router.post("/google", response_model=Token)
-async def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)):
+async def google_auth(body: GoogleAuthRequest, request: Request, db: Session = Depends(get_db)):
     """
     Authenticates a user via Google OAuth2 token and returns a JWT access token.
+    Enforces IP-based rate limiting before outbound Google token verification.
     Strictly verifies audience (aud/azp == GOOGLE_CLIENT_ID), verified email, and expiration.
     """
+    client_ip = _get_client_ip(request)
+    if not _check_and_record_rate_limit(f"login:ip:{client_ip}", limit=settings.AUTH_RATE_LIMIT_LOGIN_PER_IP, window_seconds=300):
+        logger.warning("Rate limit exceeded for IP %s: too many Google auth attempts", client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts from this IP address. Please try again later."
+        )
+
     id_info = await verify_google_token(body.access_token)
 
     email = id_info["email"]
@@ -398,9 +541,21 @@ async def google_auth(body: GoogleAuthRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(user)
 
+    db.refresh(user)
+    if user.token_version is None:
+        logger.error("User %s has null token_version", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="User token version is uninitialized."
+        )
+
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return {
-        "access_token": create_access_token(user.id, expires_delta=access_token_expires),
+        "access_token": create_access_token(
+            user.id,
+            expires_delta=access_token_expires,
+            token_version=user.token_version
+        ),
         "token_type": "bearer",
     }
 
@@ -535,8 +690,16 @@ def reset_password(
             detail="This reset link is invalid or has expired.",
         )
 
-    # Update password and mark tokens within a single transaction
+    if user.token_version is None:
+        logger.error("User %s has null token_version", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error",
+        )
+
+    # Update password and increment token_version within a single transaction to revoke active sessions
     user.hashed_password = get_password_hash(body.new_password)
+    user.token_version = user.token_version + 1
     token_record.used_at = now
 
     # Invalidate all other unused tokens for this user
@@ -548,9 +711,8 @@ def reset_password(
 
     db.commit()
 
-    # NOTE: Existing JWT access tokens remain valid until their expiration
-    # timestamp because JWTs are stateless. Session revocation (e.g. token blacklisting
-    # or token-version tracking) is intentionally not implemented in this step.
+    # NOTE: Existing JWT access tokens are immediately invalidated because user.token_version
+    # has been incremented. Any subsequent request with an old JWT fails with HTTP 401.
 
     return {"message": "Password updated. You can now log in."}
 

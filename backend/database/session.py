@@ -7,41 +7,58 @@ from backend.utils.config import settings
 def get_database_url() -> str:
     """
     Returns the database connection URL.
-    Ensures that test suites run against a dedicated, isolated test database
-    (security_scanner_test or TEST_DATABASE_URL) and can never connect to or
-    touch the production/application database (security_scanner).
+    Ensures that test suites run strictly and exclusively against an isolated,
+    in-memory SQLite database ('sqlite://') using StaticPool and check_same_thread=False.
+    The application database can NEVER be connected to or touched during tests.
     """
-    if os.getenv("TEST_DATABASE_URL"):
-        return os.getenv("TEST_DATABASE_URL")
-
     is_testing = (
         "pytest" in sys.modules
         or os.getenv("TESTING") == "1"
         or bool(os.getenv("PYTEST_CURRENT_TEST"))
     )
 
-    base_url = settings.sqlalchemy_database_uri
     if is_testing:
-        if base_url.endswith("/security_scanner"):
-            return base_url + "_test"
-        elif "/security_scanner?" in base_url:
-            return base_url.replace("/security_scanner?", "/security_scanner_test?")
-        elif not base_url.startswith("sqlite") and not base_url.endswith("_test"):
-            parts = base_url.rsplit("/", 1)
-            if len(parts) == 2 and parts[1]:
-                return f"{parts[0]}/{parts[1]}_test"
-    return base_url
+        test_url = (os.getenv("TEST_DATABASE_URL") or "").strip()
+        if not test_url:
+            # Default test database: pure in-memory SQLite
+            return "sqlite://"
+
+        from sqlalchemy.engine.url import make_url
+        parsed_test = make_url(test_url)
+
+        # Enforce in-memory SQLite exclusively: reject file-based SQLite URLs
+        if parsed_test.drivername == "sqlite":
+            raw_url = test_url.split("?")[0].strip()
+            db_path = parsed_test.database
+            if db_path not in (None, "", ":memory:") or raw_url not in ("sqlite://", "sqlite:///", "sqlite:///:memory:"):
+                raise RuntimeError(
+                    f"CRITICAL: Non-in-memory SQLite database '{test_url}' is rejected in test mode! "
+                    "Automated tests must run strictly and exclusively against in-memory SQLite ('sqlite://')."
+                )
+            return test_url
+
+        # Reject all non-SQLite databases unconditionally (including PostgreSQL)
+        raise RuntimeError(
+            f"CRITICAL: Database '{test_url}' is rejected in test mode! "
+            "Automated tests must run strictly and exclusively against in-memory SQLite ('sqlite://')."
+        )
+
+    return settings.sqlalchemy_database_uri
 
 db_url = get_database_url()
 
 connect_args = {}
+engine_kwargs = {}
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+    from sqlalchemy.pool import StaticPool
+    engine_kwargs["poolclass"] = StaticPool
 
 engine = create_engine(
     db_url,
     pool_pre_ping=True,
-    connect_args=connect_args
+    connect_args=connect_args,
+    **engine_kwargs
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
