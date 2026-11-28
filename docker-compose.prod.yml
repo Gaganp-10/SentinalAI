@@ -164,7 +164,9 @@ services:
   # PostgreSQL 15 Database (Internal Only - Strictly Scoped Environment)
   # ─────────────────────────────────────────────────────────────────────────────
   db:
-    image: postgres:15.20-alpine3.24
+    build:
+      context: ./deploy/postgres
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-security_scanner}
