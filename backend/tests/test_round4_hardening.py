@@ -36,19 +36,28 @@ def reset_hardening_state():
     orig_timeout = settings.SCAN_TIMEOUT_SECONDS
     orig_ai_cap = settings.MAX_AI_EXPLANATIONS_PER_SCAN
     orig_copilot_limit = settings.MAX_DAILY_COPILOT_CHATS_PER_USER
+    orig_login_per_ip = settings.AUTH_RATE_LIMIT_LOGIN_PER_IP
+    orig_login_per_account = settings.AUTH_RATE_LIMIT_LOGIN_PER_ACCOUNT
+    orig_signup_per_ip = settings.AUTH_RATE_LIMIT_SIGNUP_PER_IP
+    orig_signup_per_account = settings.AUTH_RATE_LIMIT_SIGNUP_PER_ACCOUNT
 
-    yield
-
-    settings.ALLOW_SIGNUP = orig_allow_signup
-    settings.GOOGLE_AUTH_ALLOWLIST = orig_google_allowlist
-    settings.MAX_USER_STORAGE_MB = orig_max_storage
-    settings.MAX_CONCURRENT_SCANS = orig_concurrency
-    settings.SCAN_TIMEOUT_SECONDS = orig_timeout
-    settings.MAX_AI_EXPLANATIONS_PER_SCAN = orig_ai_cap
-    settings.MAX_DAILY_COPILOT_CHATS_PER_USER = orig_copilot_limit
-    reset_auth_rate_limits()
-    reset_upload_limits()
-    reset_copilot_rate_limits()
+    try:
+        yield
+    finally:
+        settings.ALLOW_SIGNUP = orig_allow_signup
+        settings.GOOGLE_AUTH_ALLOWLIST = orig_google_allowlist
+        settings.MAX_USER_STORAGE_MB = orig_max_storage
+        settings.MAX_CONCURRENT_SCANS = orig_concurrency
+        settings.SCAN_TIMEOUT_SECONDS = orig_timeout
+        settings.MAX_AI_EXPLANATIONS_PER_SCAN = orig_ai_cap
+        settings.MAX_DAILY_COPILOT_CHATS_PER_USER = orig_copilot_limit
+        settings.AUTH_RATE_LIMIT_LOGIN_PER_IP = orig_login_per_ip
+        settings.AUTH_RATE_LIMIT_LOGIN_PER_ACCOUNT = orig_login_per_account
+        settings.AUTH_RATE_LIMIT_SIGNUP_PER_IP = orig_signup_per_ip
+        settings.AUTH_RATE_LIMIT_SIGNUP_PER_ACCOUNT = orig_signup_per_account
+        reset_auth_rate_limits()
+        reset_upload_limits()
+        reset_copilot_rate_limits()
 
 
 def create_test_user(db, username="hardened_user", email="hardened@example.com"):

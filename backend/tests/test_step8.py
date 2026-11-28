@@ -274,7 +274,12 @@ def test_honesty_rule_detector_failure_not_comparable():
     from backend.models.models import File
     db = SessionLocal()
     try:
-        user = db.query(User).first()
+        uid = uuid.uuid4().hex[:8]
+        user = User(username=f"step8_{uid}", email=f"step8_{uid}@example.com")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        assert user.id is not None
         project = Project(user_id=user.id, project_name="Honesty Detector Test")
         db.add(project)
         db.flush()
@@ -326,6 +331,9 @@ def test_honesty_rule_detector_failure_not_comparable():
         if 'project' in locals() and project.id:
             db.query(Project).filter(Project.id == project.id).delete()
             db.commit()
+        if 'user' in locals() and user.id:
+            db.query(User).filter(User.id == user.id).delete()
+            db.commit()
         db.close()
 
 
@@ -334,7 +342,12 @@ def test_honesty_rule_removed_file_not_comparable():
     from backend.models.models import File
     db = SessionLocal()
     try:
-        user = db.query(User).first()
+        uid = uuid.uuid4().hex[:8]
+        user = User(username=f"step8_{uid}", email=f"step8_{uid}@example.com")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        assert user.id is not None
         project = Project(user_id=user.id, project_name="Honesty File Test")
         db.add(project)
         db.flush()
@@ -382,6 +395,9 @@ def test_honesty_rule_removed_file_not_comparable():
         if 'project' in locals() and project.id:
             db.query(Project).filter(Project.id == project.id).delete()
             db.commit()
+        if 'user' in locals() and user.id:
+            db.query(User).filter(User.id == user.id).delete()
+            db.commit()
         db.close()
 
 
@@ -390,7 +406,12 @@ def test_dependency_upgrade_persisting_with_version_note():
     from backend.models.models import File
     db = SessionLocal()
     try:
-        user = db.query(User).first()
+        uid = uuid.uuid4().hex[:8]
+        user = User(username=f"step8_{uid}", email=f"step8_{uid}@example.com")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        assert user.id is not None
         project = Project(user_id=user.id, project_name="Dep Upgrade Test")
         db.add(project)
         db.flush()
@@ -458,6 +479,9 @@ def test_dependency_upgrade_persisting_with_version_note():
     finally:
         if 'project' in locals() and project.id:
             db.query(Project).filter(Project.id == project.id).delete()
+            db.commit()
+        if 'user' in locals() and user.id:
+            db.query(User).filter(User.id == user.id).delete()
             db.commit()
         db.close()
 
@@ -651,7 +675,12 @@ def test_old_diff_immutable_after_files_added_or_removed():
     db = SessionLocal()
     project = None
     try:
-        user = db.query(User).first()
+        uid = uuid.uuid4().hex[:8]
+        user = User(username=f"step8_{uid}", email=f"step8_{uid}@example.com")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        assert user.id is not None
         project = Project(user_id=user.id, project_name="Per Scan Coverage Test")
         db.add(project)
         db.flush()
@@ -742,6 +771,9 @@ def test_old_diff_immutable_after_files_added_or_removed():
     finally:
         if project and project.id:
             db.query(Project).filter(Project.id == project.id).delete()
+            db.commit()
+        if 'user' in locals() and user.id:
+            db.query(User).filter(User.id == user.id).delete()
             db.commit()
         db.close()
 

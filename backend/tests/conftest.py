@@ -14,6 +14,15 @@ from backend.main import app
 from backend.database.session import Base, get_db, SessionLocal, engine as session_engine
 import backend.models.models
 
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """Reset all in-memory auth rate-limit state before and after every test."""
+    from backend.api.auth import reset_auth_rate_limits
+    reset_auth_rate_limits()
+    yield
+    reset_auth_rate_limits()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_test_database_isolation():
     """

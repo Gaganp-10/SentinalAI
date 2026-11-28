@@ -249,6 +249,10 @@ jobs:
         run: |
           docker build -t sentinel-caddy:local -f deploy/caddy/Dockerfile .
 
+      - name: Build Postgres Docker Image
+        run: |
+          docker build -t sentinel-postgres:local ./deploy/postgres
+
       - name: Trivy Scan Backend Image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -274,7 +278,7 @@ jobs:
       - name: Trivy Scan Postgres Image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: "postgres:15.20-alpine3.24"
+          image-ref: "sentinel-postgres:local"
           format: "table"
           exit-code: "1"
           ignore-unfixed: "true"
